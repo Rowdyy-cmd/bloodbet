@@ -12,6 +12,8 @@
  *   MAX_PLAYERS      aynı anda en fazla oyuncu (varsayılan 75)
  *   MAX_PER_IP       aynı IP'den en fazla bağlantı (varsayılan 8)
  *   DATA_DIR         hesapların kaydedildiği klasör (varsayılan ./data). Kalıcı diske işaret etmeli!
+ *   UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN
+ *                    verilirse hesaplar ücretsiz Upstash veritabanında saklanır (güncelleme/yeniden başlatmada silinmez)
  *   TRUST_PROXY=1    Cloudflare gibi herkese açık bir proxy arkasındaysan X-Forwarded-For kullan
  *                    (aynı makinedeki / özel ağdaki proxy otomatik tanınır)
  */
@@ -170,15 +172,44 @@ const BUD_RATE = 2, BUD_CAP = 6000, BUD_START = 4000;   // sunucunun izin verdi�
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 let users = Object.create(null);
 try { Object.assign(users, JSON.parse(fs.readFileSync(USERS_FILE, 'utf8')) || {}); } catch (e) { }
-let saveT = null;
+let saveT = null, savingP = null;
+const UP_URL = (process.env.UPSTASH_REDIS_REST_URL || '').replace(/\/+$/, '');
+const UP_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || '';
+const REMOTE = !!(UP_URL && UP_TOKEN);
+const lastSaved = Object.create(null);     // hesap -> en son veritabanına yazılan metin
+async function redis(cmd) {
+  const r = await fetch(UP_URL, { method: 'POST', headers: { Authorization: 'Bearer ' + UP_TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify(cmd) });
+  const j = await r.json();
+  if (j.error) throw new Error(j.error);
+  return j.result;
+}
+async function loadRemote() {
+  const res = (await redis(['HGETALL', 'bloodbet:users'])) || [];
+  for (let i = 0; i + 1 < res.length; i += 2) {
+    try { users[res[i]] = JSON.parse(res[i + 1]); lastSaved[res[i]] = res[i + 1]; } catch (e) { }
+  }
+  log('veritabanından', Object.keys(users).length, 'hesap yüklendi');
+}
+async function flushRemote() {              // sadece değişen hesapları yazar
+  const args = ['HSET', 'bloodbet:users'], upd = [];
+  for (const k in users) { const t = JSON.stringify(users[k]); if (lastSaved[k] !== t) { args.push(k, t); upd.push([k, t]); } }
+  if (!upd.length) return;
+  await redis(args);
+  for (const [k, t] of upd) lastSaved[k] = t;
+}
 function writeUsers() {
+  if (REMOTE) {
+    savingP = (savingP || Promise.resolve()).then(flushRemote).catch(e => log('veritabanı kayıt hatası:', e.message));
+    return savingP;
+  }
   try { const tmp = USERS_FILE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(users)); fs.renameSync(tmp, USERS_FILE); }
   catch (e) { log('kayıt hatası:', e.message); }
+  return Promise.resolve();
 }
 function saveUsers(now) {
   if (now) { clearTimeout(saveT); saveT = null; return writeUsers(); }
   if (saveT) return;
-  saveT = setTimeout(() => { saveT = null; writeUsers(); }, 3000);
+  saveT = setTimeout(() => { saveT = null; writeUsers(); }, REMOTE ? 15000 : 3000);
 }
 const NAME_RE = /^[\p{L}\p{N}_.-]+(?: [\p{L}\p{N}_.-]+)*$/u;
 const RESERVED = new Set(['admin', 'owner', 'system', 'sistem', 'lobi', 'mod', 'moderator', 'yönetici', 'yonetici', 'oyuncu']);
@@ -445,7 +476,7 @@ const SEC = { 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referr
 
 const server = http.createServer((req, res) => {
   const u = (req.url || '/').split('?')[0];
-  if (u === '/healthz') { res.writeHead(200, { 'Content-Type': 'text/plain', ...SEC }); return res.end('ok ' + players.size); }
+  if (u === '/healthz') { res.writeHead(200, { 'Content-Type': 'text/plain', ...SEC }); return res.end('ok ' + players.size + (REMOTE ? ' db' : ' dosya')); }
   if (u === '/' || u === '/index.html') {
     const body = loadHtml();
     if (!body) { res.writeHead(404, { 'Content-Type': 'text/plain', ...SEC }); return res.end('index.html bulunamadı (oyun dosyasını index.html adıyla server2.js ile aynı klasöre koy).'); }
@@ -497,13 +528,29 @@ setInterval(() => {
 function log(...a) { console.log(new Date().toISOString().slice(11, 19), ...a); }
 
 if (require.main === module) {
-  server.listen(PORT, HOST, () => {
+  const start = () => server.listen(PORT, HOST, () => {
     log(`BloodBet sunucusu http://localhost:${PORT} adresinde (WebSocket: /ws)`);
+    log(REMOTE ? 'Hesaplar: Upstash veritabanı (kalıcı)' : 'Hesaplar: yerel dosya ' + USERS_FILE + ' (barındırma diski kalıcı değilse güncellemede silinir!)');
     if (!process.env.OWNER_CODE) log('OWNER_CODE verilmedi, bu oturum için üretildi:', OWNER_CODE);
     if (!process.env.ADMIN_CODE) log('ADMIN_CODE verilmedi, bu oturum için üretildi:', ADMIN_CODE);
     if (!ALLOWED.length) log('Uyarı: ALLOWED_ORIGINS boş, her siteden bağlanılabilir.');
   });
-  const stop = () => { saveUsers(true); for (const c of conns) c.close(1001); server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 1500).unref(); };
+  if (REMOTE) {            // hesaplar yüklenmeden kimse alınmaz (yoksa var olan isimler yeniden kaydedilebilir)
+    (async () => {
+      for (let i = 1; ; i++) {
+        try { await loadRemote(); return start(); }
+        catch (e) {
+          log(`veritabanına bağlanılamadı (${i}/5):`, e.message);
+          if (i >= 5) { log('UPSTASH_REDIS_REST_URL ve UPSTASH_REDIS_REST_TOKEN değerlerini kontrol et.'); process.exit(1); }
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      }
+    })();
+  } else start();
+  const stop = () => {
+    setTimeout(() => process.exit(0), 8000).unref();
+    saveUsers(true).finally(() => { for (const c of conns) c.close(1001); server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 1500).unref(); });
+  };
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
 }
 module.exports = { server, OWNER_CODE, ADMIN_CODE, players };
