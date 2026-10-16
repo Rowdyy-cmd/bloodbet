@@ -1,0 +1,9 @@
+{
+  "name": "bloodbet",
+  "version": "2.0.0",
+  "private": true,
+  "description": "BloodBet çok oyunculu sunucu",
+  "main": "server2.js",
+  "scripts": { "start": "node server2.js" },
+  "engines": { "node": ">=18" }
+}
