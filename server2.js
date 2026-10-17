@@ -234,7 +234,7 @@ function banList() { return Object.keys(bans).filter(k => banOf(k)).map(k => ({ 
 const PS = v => Math.round(v * 1.5 / 10) * 10;   // istemcideki PS ile aynı: tüm eşya / kasa fiyatları x1,5
 const PRICE = new Map([["c1",0],["c2",150],["c3",200],["c4",200],["c5",320],["c6",320],["c7",350],["c8",700],["c9",750],["c10",1400],["o1",0],["o2",180],["o3",380],["o4",750],["o5",1500],["o6",3500],["o7",480],["o8",900],["o9",1600],["o10",4200],["h1",0],["h6",170],["h7",190],["h2",330],["h8",340],["h4",700],["h5",750],["h9",800],["h3",1400],["h10",1650],["d1",0],["d5",180],["d2",330],["d6",350],["d4",720],["d7",700],["d3",1400],["d8",1500],["d9",3200]].map(([k, v]) => [k, PS(v)]));
 const DEFAULT_OWNED = ['c1', 'h1', 'o1', 'd1'];
-const START_GOLD = 500;
+const START_GOLD = +process.env.START_GOLD || 100;   // 1$ = 100 coin, yeni hesaba 1$ değerinde başlangıç
 const BUD_RATE = 0.6, BUD_CAP = 6000, BUD_START = 3000;   // sunucunun izin verdiği en hızlı servet artışı (altın/sn, üst sınır)
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 let users = Object.create(null);
@@ -255,6 +255,7 @@ async function loadRemote() {
   for (let i = 0; i + 1 < res.length; i += 2) {
     try { users[res[i]] = JSON.parse(res[i + 1]); lastSaved[res[i]] = res[i + 1]; } catch (e) { }
   }
+  await loadDepsRemote();
   log('veritabanından', Object.keys(users).length, 'hesap yüklendi');
 }
 async function flushRemote() {              // sadece değişen hesapları yazar
@@ -469,6 +470,7 @@ function onMsg(c, txt) {
     case 'tb': return tblMsg(p, m, now);
     case 'rb': return rrBets(p, m, now);
     case 'tip': return doTip(p, m, now);
+    case 'dep': return depMsg(p, m, now);
     case 'tr': return trMsg(p, m, now);
     case 'bj': return bjAct(p, m, now);
     case 'mn': return mnAct(p, m, now);
@@ -837,7 +839,113 @@ function rrSettle(now) {
 }
 setInterval(() => { const now = Date.now(); if (now < RR.end) return; if (RR.ph === 'bet') rrLock(now); else rrSettle(now); }, 250);
 
+/* ---------- COIN SATIN ALMA (elle onaylı kripto) ----------
+ * 1$ = 100 coin · her yatırımdan %2 komisyon · çekim YOK, coin gerçek para değildir.
+ * Cüzdan adresleri: data/wallets.json  ya da  PAY_WALLETS ortam değişkeni (JSON).
+ *   {"USDT":{"net":"TRC20","addr":"T..."},"BTC":{"net":"Bitcoin","addr":"bc1..."}, ...}
+ * Akış: oyuncu tutar+coin seçer (open) -> adrese gönderir, işlem numarasını (TXID) yazar (paid) -> owner kontrol edip onaylar (ok) -> coin yatar.
+ */
+const COIN_RATE = 100, DEP_FEE = 0.02, DEP_MIN_C = +process.env.DEP_MIN_USD * 100 || 200, DEP_MAX_C = +process.env.DEP_MAX_USD * 100 || 50000, DEP_DAY_C = +process.env.DEP_DAY_USD * 100 || 100000;
+const CRYPTOS = [['TRX', 'TRON', 'TRON'], ['BTC', 'Bitcoin', 'Bitcoin'], ['ETH', 'Ethereum', 'ERC20'], ['BNB', 'BNB', 'BEP20'], ['USDT', 'Tether', 'ERC20'], ['LTC', 'Litecoin', 'Litecoin'], ['SOL', 'Solana', 'Solana'], ['XRP', 'XRP', 'XRP Ledger'], ['DOGE', 'Dogecoin', 'Dogecoin']];
+let WALLETS = {                      // varsayılan cüzdanlar (data/wallets.json ve PAY_WALLETS bunların üstüne yazar)
+  TRX: { net: 'TRC20', addr: 'TVfEF8C74tL7DKqZxSTHjzqdrqS2Aumg9H' },
+  BTC: { net: 'Bitcoin', addr: 'bc1q6nkysggv7zpaz0p7fydwdagu8kens29h9uagkj' },
+  ETH: { net: 'ERC20', addr: '0x38a1B80E71BCB6860D5A3A355399A2935364051E' },
+  USDT: { net: 'ERC20', addr: '0x38a1B80E71BCB6860D5A3A355399A2935364051E' },
+  BNB: { net: 'BEP20', addr: '0x38a1B80E71BCB6860D5A3A355399A2935364051E' },
+  LTC: { net: 'Litecoin', addr: 'LWwse7f2Jre7XKwfhAhc2wukipSS6XvfGs' },
+  SOL: { net: 'Solana', addr: 'ANx1Ev78FNm9kki9djJdadRV4UeoSSun28pT2ShpWD5q' },
+  XRP: { net: 'XRP Ledger', addr: 'ryNawmBuHPMgkzovV829J2XNMGKmVQjio' },
+  DOGE: { net: 'Dogecoin', addr: 'DM6n14EQGenypfgEPzh4vwzacqt8WxMtib' }
+};
+try { Object.assign(WALLETS, JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'wallets.json'), 'utf8')) || {}); } catch (e) { }
+try { const j = JSON.parse(process.env.PAY_WALLETS || 'null'); if (j && typeof j === 'object') WALLETS = Object.assign(WALLETS, j); } catch (e) { }
+const deps = Object.create(null);
+const DEPS_FILE = path.join(DATA_DIR, 'deposits.json');
+try { Object.assign(deps, JSON.parse(fs.readFileSync(DEPS_FILE, 'utf8')) || {}); } catch (e) { }
+function depSave(d) {
+  if (REMOTE) { redis(['HSET', 'bloodbet:deps', d.id, JSON.stringify(d)]).catch(e => log('dep kayıt hatası:', e.message)); return; }
+  try { const tmp = DEPS_FILE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(deps)); fs.renameSync(tmp, DEPS_FILE); } catch (e) { log('dep kayıt hatası:', e.message); }
+}
+async function loadDepsRemote() {
+  const res = (await redis(['HGETALL', 'bloodbet:deps'])) || [];
+  for (let i = 0; i + 1 < res.length; i += 2) { try { deps[res[i]] = JSON.parse(res[i + 1]); } catch (e) { } }
+}
+const depCoinsOf = usdC => Math.floor(usdC * (1 - DEP_FEE));            // 1 cent = 1 coin
+const depView = (d, full) => Object.assign({ id: d.id, coin: d.coin, net: d.net, addr: d.addr, usdC: d.usdC, coins: d.coins, fee: d.usdC - d.coins, st: d.st, at: d.at, txid: d.txid || '' }, full ? { name: d.name } : {});
+const depOList = () => Object.values(deps).filter(x => x.st === 'paid' || x.st === 'open').sort((x, y) => x.at - y.at).map(x => depView(x, true));
+const ownersCast = obj => { for (const q of players.values()) if (q.role === 'owner') q.conn.send(obj); };
+const onlineAcct = a => { for (const q of players.values()) if (q.acct === a) return q; return null; };
+function depMsg(p, m, now) {
+  const a = p.acct, key = a.name.toLowerCase(), c = p.conn, act = String(m.a || '');
+  const err = code => c.send({ t: 'dep', a: 'err', c: code });
+  if (now - (p.depT || 0) < 600) return;
+  p.depT = now;
+  const mine = () => Object.values(deps).filter(d => d.key === key).sort((x, y) => y.at - x.at).slice(0, 12).map(d => depView(d));
+  if (act === 'info') {
+    return c.send({ t: 'dep', a: 'info', rate: COIN_RATE, fee: DEP_FEE * 100, min: DEP_MIN_C / 100, max: DEP_MAX_C / 100,
+      coins: CRYPTOS.map(([id, name, net]) => ({ id, name, net: (WALLETS[id] && WALLETS[id].net) || net, on: !!(WALLETS[id] && WALLETS[id].addr) })), list: mine() });
+  }
+  if (act === 'req') {
+    if (!m.age) return err('age');
+    const cr = CRYPTOS.find(x => x[0] === m.coin), w = cr && WALLETS[cr[0]];
+    if (!cr || !w || !w.addr) return err('coin');
+    const usdC = Math.round(Number(m.usd) * 100);
+    if (!(usdC >= DEP_MIN_C && usdC <= DEP_MAX_C)) return err('amt');
+    const open = Object.values(deps).filter(d => d.key === key && (d.st === 'open' || d.st === 'paid'));
+    if (open.length >= 3) return err('many');
+    const day = Object.values(deps).filter(d => d.key === key && d.st !== 'no' && d.st !== 'cx' && now - d.at < 864e5).reduce((t, d) => t + d.usdC, 0);
+    if (day + usdC > DEP_DAY_C) return err('day');
+    const d = { id: 'd' + now.toString(36) + crypto.randomBytes(3).toString('hex'), key, name: a.name, usdC, coins: depCoinsOf(usdC), coin: cr[0], net: w.net || cr[2], addr: String(w.addr), st: 'open', at: now };
+    deps[d.id] = d; depSave(d);
+    ownersCast({ t: 'dep', a: 'new', d: depView(d, true) });
+    log('yatırım talebi açıldı', a.name, '$' + usdC / 100, cr[0], d.id);
+    return c.send({ t: 'dep', a: 'made', d: depView(d), list: mine() });
+  }
+  const d = deps[String(m.id || '')];
+  if (act === 'paid' || act === 'cx') {
+    if (!d || d.key !== key) return err('none');
+    if (act === 'cx') { if (d.st !== 'open' && d.st !== 'paid') return err('state'); d.st = 'cx'; d.upd = now; depSave(d); ownersCast({ t: 'dep', a: 'olist', list: depOList() }); return c.send({ t: 'dep', a: 'mine', list: mine() }); }
+    if (d.st !== 'open') return err('state');
+    const txid = String(m.txid || '').trim().replace(/\s+/g, '').slice(0, 120);
+    if (!/^[A-Za-z0-9:_\-.]{12,120}$/.test(txid)) return err('txid');
+    const low = txid.toLowerCase();
+    if (Object.values(deps).some(x => x.txid && x.txid.toLowerCase() === low && x.st !== 'no' && x.st !== 'cx')) return err('dup');
+    d.txid = txid; d.st = 'paid'; d.upd = now; depSave(d);
+    ownersCast({ t: 'dep', a: 'new', d: depView(d, true) });
+    log('ödeme bildirildi', a.name, '$' + d.usdC / 100, d.coin, d.txid);
+    return c.send({ t: 'dep', a: 'mine', list: mine() });
+  }
+  // --- sadece owner ---
+  if (p.role !== 'owner') return err('perm');
+  if (act === 'olist') return c.send({ t: 'dep', a: 'olist', list: depOList() });
+  if (act === 'ok' || act === 'no') {
+    if (!d || (act === 'ok' ? d.st !== 'paid' : (d.st !== 'paid' && d.st !== 'open'))) return err('state');
+    if (act === 'no') { d.st = 'no'; d.upd = now; d.by = p.name; depSave(d); log('yatırım reddedildi', d.name, d.id); }
+    else {
+      const t = users[d.key]; if (!t) return err('none');
+      d.st = 'ok'; d.upd = now; d.by = p.name; depSave(d);       // önce durumu kaydet: iki kez yatmasın
+      t.gold += d.coins; t.depC = (t.depC || 0) + d.usdC; saveUsers(true);
+      const q = onlineAcct(t);
+      if (q) { q.gold = t.gold; pfSync(q, { m: 'depok', n: d.coins }); broadcast({ t: 'me', id: q.id, eq: q.eq, gold: q.gold }, q.id); }
+      log('yatırım onaylandı', d.name, '+' + d.coins, 'coin ($' + d.usdC / 100 + ') by', p.name);
+    }
+    const q2 = onlineAcct(users[d.key] || {}); if (q2) q2.conn.send({ t: 'dep', a: 'mine', list: Object.values(deps).filter(x => x.key === d.key).sort((x, y) => y.at - x.at).slice(0, 12).map(x => depView(x)) });
+    return ownersCast({ t: 'dep', a: 'olist', list: depOList() });
+  }
+}
+
 /* ---------- TİP ve TAKAS ---------- */
+// coin yatırma açık olduğu için oyuncular arası aktarımlar sınırlı: tek tipte ve günlük toplamda üst sınır (coin satışıyla "çekim" yapılmasını zorlaştırır)
+const TIP_MAX = +process.env.TIP_MAX || 2000, XFER_DAY = +process.env.XFER_DAY || 10000;
+function xferTake(a, n, dry, free) {
+  if (free) return true;                       // owner ile yapılan aktarımlarda limit yok
+  const d = new Date().toISOString().slice(0, 10);
+  if (!a.xf || a.xf.d !== d) a.xf = { d, n: 0 };
+  if (a.xf.n + n > XFER_DAY) return false;
+  if (!dry) a.xf.n += n;
+  return true;
+}
 const TRADE_DEF = new Set(DEFAULT_OWNED);
 const trades = new Map();     // sid -> { a, b, o:{[id]:{items,gold,ok}}, t }
 let nextSid = 1;
@@ -847,6 +955,8 @@ function doTip(p, m, now) {
   if (!t || t === p || !(n >= 1) || n > 1000000) return;
   if (now - (p.tipT || 0) < 1000) return;
   if (p.tr) return p.conn.send({ t: 'tr', a: 'msg', c: 'intrade' });
+  const free = p.role === 'owner' || t.role === 'owner';
+  if (!free && (n > TIP_MAX || !xferTake(p.acct, n))) return p.conn.send({ t: 'tr', a: 'msg', c: 'xfcap', g: TIP_MAX, d: XFER_DAY });
   if (n > p.acct.gold) return p.conn.send({ t: 'berr', c: 'poor', gold: p.acct.gold });
   p.tipT = now;
   p.acct.gold -= n; t.acct.gold += n; p.gold = p.acct.gold; t.gold = t.acct.gold; saveUsers();
@@ -875,6 +985,9 @@ function trValid(s) {
 function trExec(s) {
   if (!trValid(s)) return trEnd(s, 'fail');
   const pairs = [[s.a, s.b], [s.b, s.a]];
+  const fr = s.a.role === 'owner' || s.b.role === 'owner';
+  if (pairs.some(([g]) => s.o[g.id].gold > 0 && !xferTake(g.acct, s.o[g.id].gold, true, fr))) return trEnd(s, 'fail');
+  for (const [g] of pairs) if (s.o[g.id].gold > 0) xferTake(g.acct, s.o[g.id].gold, false, fr);
   for (const [g, r] of pairs) {
     const o = s.o[g.id];
     g.acct.gold -= o.gold; r.acct.gold += o.gold;
