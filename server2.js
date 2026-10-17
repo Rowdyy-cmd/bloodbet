@@ -217,9 +217,22 @@ class Conn {
   }
 }
 
+/* ---------- banlar (hesap adına göre, kalıcı) ---------- */
+const BANS_FILE = path.join(DATA_DIR, 'bans.json');
+let bans = {};
+try { bans = JSON.parse(fs.readFileSync(BANS_FILE, 'utf8')) || {}; } catch (e) { bans = {}; }
+function saveBans() { try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(BANS_FILE, JSON.stringify(bans)); } catch (e) { } }
+function banOf(key) {
+  const b = bans[key];
+  if (!b) return null;
+  if (b.until && b.until < Date.now()) { delete bans[key]; saveBans(); return null; }
+  return b;
+}
+function banList() { return Object.keys(bans).filter(k => banOf(k)).map(k => ({ n: bans[k].name || k, by: bans[k].by || '', until: bans[k].until || 0 })).slice(0, 100); }
+
 /* ---------- hesaplar (kalıcı) ---------- */
 const PS = v => Math.round(v * 1.5 / 10) * 10;   // istemcideki PS ile aynı: tüm eşya / kasa fiyatları x1,5
-const PRICE = new Map([["c1",0],["c2",150],["c3",200],["c4",200],["c5",320],["c6",320],["c7",350],["c8",700],["c9",750],["c10",1400],["o1",0],["o2",180],["o3",380],["o4",750],["o5",1500],["o6",3500],["h1",0],["h6",170],["h7",190],["h2",330],["h8",340],["h4",700],["h5",750],["h9",800],["h3",1400],["h10",1650],["d1",0],["d5",180],["d2",330],["d6",350],["d4",720],["d7",700],["d3",1400],["d8",1500],["d9",3200]].map(([k, v]) => [k, PS(v)]));
+const PRICE = new Map([["c1",0],["c2",150],["c3",200],["c4",200],["c5",320],["c6",320],["c7",350],["c8",700],["c9",750],["c10",1400],["o1",0],["o2",180],["o3",380],["o4",750],["o5",1500],["o6",3500],["o7",480],["o8",900],["o9",1600],["o10",4200],["h1",0],["h6",170],["h7",190],["h2",330],["h8",340],["h4",700],["h5",750],["h9",800],["h3",1400],["h10",1650],["d1",0],["d5",180],["d2",330],["d6",350],["d4",720],["d7",700],["d3",1400],["d8",1500],["d9",3200]].map(([k, v]) => [k, PS(v)]));
 const DEFAULT_OWNED = ['c1', 'h1', 'o1', 'd1'];
 const START_GOLD = 500;
 const BUD_RATE = 0.6, BUD_CAP = 6000, BUD_START = 3000;   // sunucunun izin verdiği en hızlı servet artışı (altın/sn, üst sınır)
@@ -285,6 +298,7 @@ function doAuth(c, m) {
   lt.push(now); loginTries.set(c.ip, lt);
   if (c.authBusy || c.acct) return;
   const name = cleanText(m.name, 14), key = name.toLowerCase();
+  if (banOf(key)) return c.send({ t: 'autherr', c: 'banned' });
   const pw = typeof m.pass === 'string' ? m.pass.slice(0, 64) : '';
   const fail = code => c.send({ t: 'autherr', c: code });
   if (m.t === 'reg') {
@@ -343,6 +357,7 @@ function authOk(c, a, mint, tok) {
 function applyPf(p, m, now) {
   const a = p.acct;
   const reject = () => p.conn.send({ t: 'pfx', pf: pubPf(a) });
+  if (now < (p.pfLock || 0)) return;
   if (!Array.isArray(m.owned) || m.owned.length > 120) return reject();
   const set = new Set(a.owned);
   for (const id of m.owned) if (typeof id === 'string' && PRICE.has(id)) set.add(id);
@@ -426,12 +441,15 @@ function onMsg(c, txt) {
       const a = m.a;
       if (!Array.isArray(a) || a.length < 8) return;
       if (a[6] === 'pvp' && p.st[6] !== 'pvp') { p.hp = PVP.hp; p.dead = 0; }
+      const prevZone = p.st[6];
       p.st = [
         num(a[0], -130, 130, 0), num(a[1], 0, 12, 0), num(a[2], -130, 130, 0), num(a[3], -10, 10, 0),
         STATES.has(a[4]) ? a[4] : 'idle', typeof a[5] === 'string' && ID_RE.test(a[5]) ? a[5] : p.eq.d,
         ZONES.has(a[6]) ? a[6] : 'lobby', a[7] ? 1 : 0
       ];
       p.dirty = true;
+      if (prevZone !== 'casino' && p.st[6] === 'casino') p.conn.send({ t: 'tbls', tb: tblSnap(), rr: rrView() });
+      else if (prevZone === 'casino' && p.st[6] !== 'casino') { tblLeave(p); if (RR.ph === 'bet') { RR.bets.delete(p.id); rrInfo(now); } }
       return;
     }
     case 'pf': return applyPf(p, m, now);
@@ -448,6 +466,10 @@ function onMsg(c, txt) {
     }
     case 'shot': return doShot(p, m, now);
     case 'bet': return doBet(p, m, now);
+    case 'tb': return tblMsg(p, m, now);
+    case 'rb': return rrBets(p, m, now);
+    case 'tip': return doTip(p, m, now);
+    case 'tr': return trMsg(p, m, now);
     case 'bj': return bjAct(p, m, now);
     case 'mn': return mnAct(p, m, now);
     case 'chat': {
@@ -537,6 +559,71 @@ function bjVal(cs) {
   while (t > 21 && a) { t -= 10; a--; }
   return { v: t, soft: a > 0 };
 }
+/* ---------- canlı masa izleme (diğer oyuncular dışarıdan görür) ---------- */
+// Sunucu hakemdir; izleyicilere sadece herkese açık bilgi gider (altın yok, kasanın kapalı kartı yok, mayın yerleri oyun bitene kadar yok).
+const TB_G = new Set(['roul', 'wof', 'bj', 'mines']);
+const TBL = { roul: null, wof: null, bj: null, mines: null };   // masa -> { id, n, v }
+function casinoCast(obj, exceptId) {
+  const fr = frame(1, Buffer.from(JSON.stringify(obj)));
+  for (const q of players.values()) if (q.id !== exceptId && q.st[6] === 'casino') q.conn.sendFrame(fr);
+}
+function tblSnap() {
+  const o = {};
+  for (const g of TB_G) o[g] = TBL[g] ? { id: TBL[g].id, n: TBL[g].n, v: TBL[g].v } : null;
+  return o;
+}
+function tblPub(v) {
+  const w = Object.assign({}, v);
+  delete w.gold; delete w.t; delete w.dbl;
+  return w;
+}
+function tblSet(p, g, v) {
+  if (!TB_G.has(g)) return;
+  p.tbg = g;
+  TBL[g] = { id: p.id, n: p.name, v: tblPub(v) };
+  casinoCast({ t: 'tbl', g, id: p.id, n: p.name, o: 1, v: TBL[g].v }, p.id);
+}
+function tblLeave(p) {
+  const g = p.tbg;
+  if (!g) return;
+  p.tbg = null;
+  if (!TBL[g] || TBL[g].id !== p.id) return;
+  let next = null;                                   // aynı masada oynayan başka biri varsa onu öne çıkar
+  for (const q of players.values()) if (q !== p && q.tbg === g && q.st[6] === 'casino' && q.tbv) next = q;
+  if (next) { TBL[g] = { id: next.id, n: next.name, v: next.tbv }; casinoCast({ t: 'tbl', g, id: next.id, n: next.name, o: 1, v: next.tbv }); }
+  else { TBL[g] = null; casinoCast({ t: 'tbl', g, id: p.id, o: 0 }); }
+}
+function tblMsg(p, m, now) {                          // istemci: masaya oturdu / kalktı / bahis fişlerini değiştirdi
+  if (p.st[6] !== 'casino' || !TB_G.has(m.g) || m.g === 'roul') return;
+  const tok = Math.min(10, (p.tbTok == null ? 10 : p.tbTok) + (now - (p.tbT || now)) / 150);   // saniyede ~6 mesaj, 10'luk patlama
+  if (tok < 1) return;
+  p.tbTok = tok - 1; p.tbT = now;
+  if (!m.o) { if (p.tbg === m.g) tblLeave(p); return; }
+  if (p.tbg && p.tbg !== m.g) tblLeave(p);
+  let v = {};
+  if (m.g === 'roul') {
+    const bets = [];
+    if (Array.isArray(m.bets)) for (const b of m.bets.slice(0, 24)) {
+      if (!b || typeof b.k !== 'string' || !BET_KINDS.has(b.k)) continue;
+      const a = Math.floor(Number(b.a)), vv = b.k === 'n' ? Math.floor(Number(b.v)) : 0;
+      if (!(a >= 1 && a <= MAX_BET) || (b.k === 'n' && !(vv >= 0 && vv <= 36))) continue;
+      bets.push({ k: b.k, v: vv, a });
+    }
+    v = { bets };
+  } else if (m.g === 'wof') {
+    const a = Math.floor(Number(m.a));
+    v = { a: a >= 1 && a <= MAX_BET ? a : 0 };
+  } else if (TBL[m.g] && TBL[m.g].id === p.id) return;   // bj / mines: durumu zaten sunucu gönderiyor
+  p.tbg = m.g; p.tbv = v;
+  tblSet(p, m.g, v);
+}
+function tx(p, o) {                                   // oyuncuya gönder + masa izleyicilerine yayınla
+  p.conn.send(o);
+  if (o && o.t === 'bjs') { p.tbv = tblPub(o); tblSet(p, 'bj', o); }
+  else if (o && o.t === 'mns') { p.tbv = tblPub(o); tblSet(p, 'mines', o); }
+  return o;
+}
+
 function bjView(h, res, pay, gold) {
   const over = !!res;
   return { t: 'bjs', st: over ? 'done' : 'play', p: h.p.slice(), d: over ? h.d.slice() : [h.d[0]], res: res || '', bet: h.bet, pay: pay || 0, gold, dbl: !over && h.p.length === 2 && !h.dd };
@@ -566,10 +653,10 @@ function bjStart(p, m, now) {
   const h = { bet, p: [bjDraw(), bjDraw()], d: [bjDraw(), bjDraw()], dd: false };
   p.bj = h; saveUsers();
   const pn = bjVal(h.p).v === 21, dn = bjVal(h.d).v === 21;
-  if (pn && dn) return c.send(bjFinish(p, now, 'push', bet));
-  if (pn) return c.send(bjFinish(p, now, 'bj', Math.floor(bet * 2.5)));
-  if (dn) return c.send(bjFinish(p, now, 'lose', 0));
-  c.send(bjView(h, '', 0, a.gold));
+  if (pn && dn) return tx(p, bjFinish(p, now, 'push', bet));
+  if (pn) return tx(p, bjFinish(p, now, 'bj', Math.floor(bet * 2.5)));
+  if (dn) return tx(p, bjFinish(p, now, 'lose', 0));
+  tx(p, bjView(h, '', 0, a.gold));
 }
 function bjAct(p, m, now) {
   const h = p.bj, c = p.conn, a = p.acct;
@@ -578,18 +665,18 @@ function bjAct(p, m, now) {
   const act = m.a;
   if (act === 'hit') {
     h.p.push(bjDraw()); const v = bjVal(h.p).v;
-    if (v > 21) return c.send(bjFinish(p, now, 'bust', 0));
-    if (v === 21) return c.send(bjStand(p, now));
-    return c.send(bjView(h, '', 0, a.gold));
+    if (v > 21) return tx(p, bjFinish(p, now, 'bust', 0));
+    if (v === 21) return tx(p, bjStand(p, now));
+    return tx(p, bjView(h, '', 0, a.gold));
   }
   if (act === 'double') {
     if (h.p.length !== 2 || h.dd) return;
     if (h.bet > a.gold) return c.send({ t: 'berr', c: 'poor', gold: a.gold });
     a.gold -= h.bet; p.gold = a.gold; h.bet *= 2; h.dd = true; h.p.push(bjDraw());
-    if (bjVal(h.p).v > 21) return c.send(bjFinish(p, now, 'bust', 0));
-    return c.send(bjStand(p, now));
+    if (bjVal(h.p).v > 21) return tx(p, bjFinish(p, now, 'bust', 0));
+    return tx(p, bjStand(p, now));
   }
-  if (act === 'stand') return c.send(bjStand(p, now));
+  if (act === 'stand') return tx(p, bjStand(p, now));
 }
 
 /* ---------- mines (sunucu hakemlidir) ---------- */
@@ -623,20 +710,20 @@ function mnStart(p, m, now) {
   for (let i = MN_N - 1; i > 0; i--) { const j = crypto.randomInt(i + 1); const t = idx[i]; idx[i] = idx[j]; idx[j] = t; }
   p.mn = { bet, m: mc, mines: new Set(idx.slice(0, mc)), rev: [] };
   saveUsers();
-  c.send(mnView(p.mn, 'play', null, 0, a.gold));
+  tx(p, mnView(p.mn, 'play', null, 0, a.gold));
 }
 function mnAct(p, m, now) {
   const g = p.mn, c = p.conn, a = p.acct;
   if (!g) return c.send({ t: 'berr', c: 'nogame', gold: a.gold });
   p.holdUntil = now + 8000;
-  if (m.a === 'cash') { if (!g.rev.length) return; return c.send(mnFinish(p, now, 'cash')); }
+  if (m.a === 'cash') { if (!g.rev.length) return; return tx(p, mnFinish(p, now, 'cash')); }
   if (m.a !== 'pick') return;
   const i = Math.floor(Number(m.i));
   if (!(i >= 0 && i < MN_N) || g.rev.includes(i)) return;
-  if (g.mines.has(i)) return c.send(mnFinish(p, now, 'lost', i));
+  if (g.mines.has(i)) return tx(p, mnFinish(p, now, 'lost', i));
   g.rev.push(i);
-  if (g.rev.length >= MN_N - g.m || mnMult(g.m, g.rev.length) >= MN_CAP) return c.send(mnFinish(p, now, 'cash'));
-  c.send(mnView(g, 'play', null, 0, a.gold));
+  if (g.rev.length >= MN_N - g.m || mnMult(g.m, g.rev.length) >= MN_CAP) return tx(p, mnFinish(p, now, 'cash'));
+  tx(p, mnView(g, 'play', null, 0, a.gold));
 }
 function gamesAbort(p) {            // oyuncu bağlantısı koptuysa açık eller sonuçlanır
   const now = Date.now();
@@ -651,6 +738,7 @@ function doBet(p, m, now) {
   if (p.st[6] !== 'casino') return c.send({ t: 'berr', c: 'zone', gold: a.gold });
   if (now < p.betT) return c.send({ t: 'berr', c: 'fast', gold: a.gold });
   if (p.bj || p.mn) return c.send({ t: 'berr', c: 'busy', gold: a.gold });
+  if (m.g === 'roul') return c.send({ t: 'berr', c: 'round', gold: a.gold });
   if (m.g === 'bj') return bjStart(p, m, now);
   if (m.g === 'mines') return mnStart(p, m, now);
   let total = 0, bets = null;
@@ -683,8 +771,168 @@ function doBet(p, m, now) {
   }
   p.gold = a.gold; saveUsers();
   c.send(res);
+  if (m.g === 'roul') { const v = { bets, num: res.n, bet: res.bet, pay: res.pay }; p.tbv = { bets }; tblSet(p, 'roul', v); }
+  else { const v = { a: total, seg: res.seg, mult: res.mult, bet: res.bet, pay: res.pay }; p.tbv = { a: total }; tblSet(p, 'wof', v); }
   broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id);
   if (res.pay - total >= BIG_WIN) setTimeout(() => broadcast({ t: 'big', n: p.name, w: res.pay - total, g: res.g }), 5200);
+}
+
+/* ---------- ORTAK RULET: herkes aynı tura bahis koyar, süre bitince tek çark döner ---------- */
+const RR_BET = +process.env.RR_BET_MS || 25000, RR_SPIN = 5300;
+const RR = { ph: 'bet', end: Date.now() + RR_BET, id: 1, n: null, hist: [], bets: new Map(), infoT: 0 };
+function rrPl() {
+  const l = [];
+  for (const e of RR.bets.values()) l.push([e.p.name, e.total]);
+  l.sort((a, b) => b[1] - a[1]);
+  return l.slice(0, 6);
+}
+function rrView() { return { t: 'rr', ph: RR.ph, left: Math.max(0, RR.end - Date.now()), id: RR.id, n: RR.ph === 'spin' ? RR.n : null, hist: RR.hist.slice(0, 12), pl: rrPl(), cnt: RR.bets.size }; }
+function rrCast() { casinoCast(rrView()); }
+function rrInfo(now) { if (now - RR.infoT < 400) { if (!RR.infoQ) { RR.infoQ = setTimeout(() => { RR.infoQ = 0; RR.infoT = Date.now(); rrCast(); }, 450); } return; } RR.infoT = now; rrCast(); }
+function rrBets(p, m, now) {
+  if (p.st[6] !== 'casino' || RR.ph !== 'bet') return p.conn.send({ t: 'berr', c: 'closed', gold: p.acct.gold });
+  const tok = Math.min(10, (p.rbTok == null ? 10 : p.rbTok) + (now - (p.rbT || now)) / 150);
+  if (tok < 1) return;
+  p.rbTok = tok - 1; p.rbT = now;
+  if (!Array.isArray(m.bets) || m.bets.length > 24) return;
+  const bets = []; let total = 0;
+  for (const b of m.bets) {
+    if (!b || typeof b.k !== 'string' || !BET_KINDS.has(b.k)) return;
+    const amt = Math.floor(Number(b.a));
+    if (!(amt >= 1 && amt <= MAX_BET)) return;
+    const v = b.k === 'n' ? Math.floor(Number(b.v)) : 0;
+    if (b.k === 'n' && !(v >= 0 && v <= 36)) return;
+    bets.push({ k: b.k, v, a: amt }); total += amt;
+  }
+  if (total > MAX_TOTAL) return;
+  if (total > p.acct.gold) return p.conn.send({ t: 'berr', c: 'poor', gold: p.acct.gold });
+  if (!bets.length) RR.bets.delete(p.id); else RR.bets.set(p.id, { p, acct: p.acct, bets, total, void: false });
+  rrInfo(now);
+}
+function rrLock(now) {
+  const n = crypto.randomInt(0, 37);
+  RR.n = n; RR.ph = 'spin'; RR.end = now + RR_SPIN;
+  for (const e of RR.bets.values()) {
+    if (e.total > e.acct.gold) { e.void = true; if (players.get(e.p.id) === e.p) e.p.conn.send({ t: 'rl', v: 1, gold: e.acct.gold }); continue; }
+    e.acct.gold -= e.total; e.p.gold = e.acct.gold; e.p.holdUntil = now + RR_SPIN + 3000; e.p.pfLock = now + RR_SPIN + 3000;
+    if (players.get(e.p.id) === e.p) e.p.conn.send({ t: 'rl', v: 0, bet: e.total, gold: e.acct.gold });
+  }
+  saveUsers();
+  rrCast();
+}
+function rrSettle(now) {
+  const n = RR.n;
+  for (const e of RR.bets.values()) {
+    if (e.void) continue;
+    let pay = 0; for (const b of e.bets) pay += roulettePay(b, n);
+    e.acct.gold += pay; e.p.gold = e.acct.gold; e.p.rewT = now; e.p.holdUntil = 0;
+    if (players.get(e.p.id) === e.p) e.p.conn.send({ t: 'rres', n, bet: e.total, pay, gold: e.acct.gold });
+    broadcast({ t: 'me', id: e.p.id, eq: e.p.eq, gold: e.p.gold }, e.p.id);
+    if (pay - e.total >= BIG_WIN) broadcast({ t: 'big', n: e.p.name, w: pay - e.total, g: 'roul' });
+  }
+  saveUsers();
+  RR.hist.unshift(n); RR.hist = RR.hist.slice(0, 12);
+  RR.bets.clear(); RR.id++; RR.ph = 'bet'; RR.end = now + RR_BET; RR.n = null;
+  rrCast();
+}
+setInterval(() => { const now = Date.now(); if (now < RR.end) return; if (RR.ph === 'bet') rrLock(now); else rrSettle(now); }, 250);
+
+/* ---------- TİP ve TAKAS ---------- */
+const TRADE_DEF = new Set(DEFAULT_OWNED);
+const trades = new Map();     // sid -> { a, b, o:{[id]:{items,gold,ok}}, t }
+let nextSid = 1;
+function pfSync(p, msg) { p.pfLock = Date.now() + 3000; p.conn.send(Object.assign({ t: 'pfu', pf: pubPf(p.acct) }, msg || {})); }
+function doTip(p, m, now) {
+  const t = players.get(Number(m.id)), n = Math.floor(Number(m.a));
+  if (!t || t === p || !(n >= 1) || n > 1000000) return;
+  if (now - (p.tipT || 0) < 1000) return;
+  if (p.tr) return p.conn.send({ t: 'tr', a: 'msg', c: 'intrade' });
+  if (n > p.acct.gold) return p.conn.send({ t: 'berr', c: 'poor', gold: p.acct.gold });
+  p.tipT = now;
+  p.acct.gold -= n; t.acct.gold += n; p.gold = p.acct.gold; t.gold = t.acct.gold; saveUsers();
+  pfSync(p, { m: 'tipout', n, who: t.name }); pfSync(t, { m: 'tipin', n, who: p.name });
+  broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id); broadcast({ t: 'me', id: t.id, eq: t.eq, gold: t.gold }, t.id);
+  log('tip', p.name, '->', t.name, n);
+}
+function trView(s, p) {
+  const me = s.o[p.id], q = s.a === p ? s.b : s.a, th = s.o[q.id];
+  return { t: 'tr', a: 'st', who: q.name, me: { items: me.items, gold: me.gold, ok: me.ok }, they: { items: th.items, gold: th.gold, ok: th.ok } };
+}
+function trSend(s) { for (const p of [s.a, s.b]) if (players.get(p.id) === p) p.conn.send(trView(s, p)); }
+function trEnd(s, why) {
+  if (!trades.delete(s.sid)) return;
+  clearTimeout(s.to);
+  for (const p of [s.a, s.b]) { if (p.tr === s.sid) p.tr = 0; if (players.get(p.id) === p) p.conn.send({ t: 'tr', a: 'end', why: why || 'cancel' }); }
+}
+function trValid(s) {
+  for (const p of [s.a, s.b]) {
+    const q = p === s.a ? s.b : s.a, o = s.o[p.id];
+    if (o.gold > p.acct.gold) return false;
+    for (const id of o.items) if (!p.acct.owned.includes(id) || q.acct.owned.includes(id) || TRADE_DEF.has(id) || !(PRICE.get(id) > 0)) return false;
+  }
+  return true;
+}
+function trExec(s) {
+  if (!trValid(s)) return trEnd(s, 'fail');
+  const pairs = [[s.a, s.b], [s.b, s.a]];
+  for (const [g, r] of pairs) {
+    const o = s.o[g.id];
+    g.acct.gold -= o.gold; r.acct.gold += o.gold;
+    for (const id of o.items) {
+      g.acct.owned = g.acct.owned.filter(x => x !== id); r.acct.owned.push(id);
+      for (const k of ['c', 'h', 'o', 'd']) if (g.acct.eq[k] === id) g.acct.eq[k] = { c: 'c1', h: 'h1', o: 'o1', d: 'd1' }[k];
+    }
+  }
+  for (const p of [s.a, s.b]) { p.gold = p.acct.gold; p.eq = p.acct.eq; }
+  saveUsers();
+  trades.delete(s.sid); clearTimeout(s.to);
+  for (const p of [s.a, s.b]) { p.tr = 0; pfSync(p, { m: 'trade' }); p.conn.send({ t: 'tr', a: 'end', why: 'done' }); broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id); }
+  log('takas', s.a.name, '<->', s.b.name);
+}
+function trMsg(p, m, now) {
+  const a = String(m.a || '');
+  if (a === 'req') {
+    const t = players.get(Number(m.id));
+    if (!t || t === p || p.tr || t.tr || p.bj || p.mn || t.bj || t.mn) return p.conn.send({ t: 'tr', a: 'msg', c: 'busy' });
+    if (now - (p.trReqT || 0) < 3000) return;
+    p.trReqT = now; t.trReq = { from: p.id, t: now };
+    t.conn.send({ t: 'tr', a: 'req', id: p.id, n: p.name });
+    return p.conn.send({ t: 'tr', a: 'msg', c: 'sent', n: t.name });
+  }
+  if (a === 'acc' || a === 'dec') {
+    const f = players.get(Number(m.id));
+    if (!f || !p.trReq || p.trReq.from !== f.id || now - p.trReq.t > 30000) return;
+    p.trReq = null;
+    if (a === 'dec') return f.conn.send({ t: 'tr', a: 'msg', c: 'declined', n: p.name });
+    if (p.tr || f.tr || p.bj || p.mn || f.bj || f.mn) return;
+    const s = { sid: nextSid++, a: f, b: p, o: {}, to: 0 };
+    s.o[f.id] = { items: [], gold: 0, ok: false }; s.o[p.id] = { items: [], gold: 0, ok: false };
+    s.to = setTimeout(() => trEnd(s, 'timeout'), 300000);
+    trades.set(s.sid, s); f.tr = s.sid; p.tr = s.sid;
+    f.conn.send({ t: 'tr', a: 'open' }); p.conn.send({ t: 'tr', a: 'open' });
+    return trSend(s);
+  }
+  const s = trades.get(p.tr);
+  if (!s) return;
+  if (a === 'cancel') return trEnd(s, 'cancel');
+  const o = s.o[p.id], q = s.a === p ? s.b : s.a;
+  if (a === 'offer') {
+    if (now - (p.trT || 0) < 120) return;
+    p.trT = now;
+    const items = [];
+    if (Array.isArray(m.items)) for (const id of m.items.slice(0, 12)) {
+      if (typeof id === 'string' && !items.includes(id) && p.acct.owned.includes(id) && !q.acct.owned.includes(id) && !TRADE_DEF.has(id) && PRICE.get(id) > 0) items.push(id);
+    }
+    let g = Math.floor(Number(m.gold)); if (!(g >= 0)) g = 0; g = Math.min(g, p.acct.gold);
+    o.items = items; o.gold = g; s.o[p.id].ok = false; s.o[q.id].ok = false;
+    return trSend(s);
+  }
+  if (a === 'ok') {
+    if (!trValid(s)) return trEnd(s, 'fail');
+    o.ok = !o.ok;
+    if (s.o[s.a.id].ok && s.o[s.b.id].ok) return trExec(s);
+    return trSend(s);
+  }
 }
 
 function adminAction(p, m, now) {
@@ -699,6 +947,22 @@ function adminAction(p, m, now) {
     return;
   }
   if (a === 'clear') return broadcast({ t: 'clear' });
+  if (a === 'bans') return p.conn.send({ t: 'bans', l: banList() });
+  if (a === 'unban') {
+    const key = cleanText(m.n, 14).toLowerCase();
+    if (bans[key]) { delete bans[key]; saveBans(); log('unban', key, 'by', p.name); }
+    return p.conn.send({ t: 'bans', l: banList() });
+  }
+  if (a === 'give') {
+    const gt = players.get(Number(m.id)), cap = me >= 2 ? 5000000 : 50000, n = Math.floor(Number(m.n));
+    if (!gt || !(n >= 1)) return;
+    const amt = Math.min(n, cap);
+    gt.acct.gold += amt; gt.gold = gt.acct.gold; saveUsers();
+    pfSync(gt, { m: 'gift', n: amt, who: p.name });
+    broadcast({ t: 'me', id: gt.id, eq: gt.eq, gold: gt.gold }, gt.id);
+    log('give', p.name, '->', gt.name, amt);
+    return p.conn.send({ t: 'tr', a: 'msg', c: 'gave', n: gt.name, g: amt });
+  }
   const target = players.get(Number(m.id));
   if (!target || target === p) return;
   const tr = RANK[target.role] || 0;
@@ -716,6 +980,15 @@ function adminAction(p, m, now) {
     broadcast({ t: 'pmute', id: target.id, v: target.muted ? 1 : 0 });
     return broadcast({ t: 'evt', e: a, n: target.name });
   }
+  if (a === 'ban') {
+    const mins = Math.max(0, Math.min(525600, Math.floor(Number(m.min)) || 0));
+    bans[target.name.toLowerCase()] = { name: target.name, by: p.name, at: now, until: mins ? now + mins * 60000 : 0 };
+    saveBans();
+    broadcast({ t: 'evt', e: 'ban', n: target.name });
+    target.conn.send({ t: 'banned' });
+    log('ban', target.name, 'by', p.name, mins || 'kalıcı');
+    return target.conn.close(1008);
+  }
   if (a === 'kick') {
     broadcast({ t: 'evt', e: 'kick', n: target.name });
     target.conn.send({ t: 'kick' });
@@ -731,6 +1004,9 @@ function onClose(c) {
   const p = c.p;
   if (p && players.get(p.id) === p) {
     gamesAbort(p);
+    tblLeave(p);
+    if (RR.ph === 'bet') RR.bets.delete(p.id);
+    if (p.tr && trades.get(p.tr)) trEnd(trades.get(p.tr), 'left');
     players.delete(p.id);
     broadcast({ t: 'leave', id: p.id });
     saveUsers();
