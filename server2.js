@@ -14,6 +14,8 @@
  *   DATA_DIR         hesapların kaydedildiği klasör (varsayılan ./data). Kalıcı diske işaret etmeli!
  *   UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN
  *                    verilirse hesaplar ücretsiz Upstash veritabanında saklanır (güncelleme/yeniden başlatmada silinmez)
+ *   ICE_SERVERS      sesli sohbet için TURN/STUN listesi (JSON). Örn: [{"urls":"turn:turn.siten.com:3478","username":"u","credential":"p"}]
+ *                    boşsa sadece Google STUN kullanılır (çoğu ev ağında yeter; mobil veri / sıkı NAT için TURN gerekir)
  *   TRUST_PROXY=1    Cloudflare gibi herkese açık bir proxy arkasındaysan X-Forwarded-For kullan
  *                    (aynı makinedeki / özel ağdaki proxy otomatik tanınır)
  */
@@ -45,8 +47,58 @@ if (savedCodes.owner !== OWNER_CODE || savedCodes.admin !== ADMIN_CODE) {   // y
 const RANK = { '': 0, admin: 1, owner: 2 };
 
 const STATES = new Set(['idle', 'walk', 'run', 'dance', 'up', 'down']);
-const ZONES = new Set(['lobby', 'range', 'casino']);
+const ZONES = new Set(['lobby', 'range', 'casino', 'pvp']);
 const ID_RE = /^[a-z][0-9]{1,3}$/;
+
+let ICE = null;
+try { const j = JSON.parse(process.env.ICE_SERVERS || 'null'); if (Array.isArray(j) && j.length) ICE = j.slice(0, 6); } catch (e) { }
+
+/* ---------- PVP arena ayarları (istemcideki PCOVER / PSPAWN ile aynı olmalı) ---------- */
+const PVP = { cx: 0, cz: 100, half: 15, hp: 100, dmg: 25, head: 50, cd: 190, range: 70, rad: 0.55, h: 1.85, respawn: 3000, reward: 60, sameVictimMs: 30000 };
+const COVER = [[-7, 93, 1.1], [7, 93, 1.1], [-7, 107, 1.1], [7, 107, 1.1], [0, 100, 1.4], [-12, 100, .9], [12, 100, .9]];
+const SPAWNS = [[-12, 88], [12, 88], [-12, 112], [12, 112], [0, 88], [0, 112]];
+function rayCircle(ox, oz, dx, dz, cx, cz, r) {      // XZ düzleminde ışın-daire kesişimi; en yakın t ya da -1
+  const fx = ox - cx, fz = oz - cz, a = dx * dx + dz * dz;
+  if (a < 1e-9) return -1;
+  const b = fx * dx + fz * dz, c = fx * fx + fz * fz - r * r, disc = b * b - a * c;
+  if (disc < 0) return -1;
+  const sq = Math.sqrt(disc);
+  let t = (-b - sq) / a;
+  if (t < 0) { t = (-b + sq) / a; if (t < 0) return -1; }
+  return t;
+}
+function wallT(ox, oz, dx, dz) {                     // ışının arena duvarına varış mesafesi
+  let t = 1e9;
+  if (dx > 1e-6) t = Math.min(t, (PVP.cx + PVP.half - ox) / dx); else if (dx < -1e-6) t = Math.min(t, (PVP.cx - PVP.half - ox) / dx);
+  if (dz > 1e-6) t = Math.min(t, (PVP.cz + PVP.half - oz) / dz); else if (dz < -1e-6) t = Math.min(t, (PVP.cz - PVP.half - oz) / dz);
+  return Math.max(0, t);
+}
+
+/* ---------- şans oyunları (sunucu hakemlidir) ---------- */
+const RED = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
+const WHEEL = [0, .5, 0, 2, 0, .5, 0, 1.5, 0, .5, 0, 3, 0, .5, 0, 2, 0, .5, 0, 1.5, 0, .5, 0, 10];   // 24 dilim, geri dönüş ≈ %95,8
+const BET_KINDS = new Set(['n', 'red', 'black', 'odd', 'even', 'low', 'high', 'd1', 'd2', 'd3', 'c1', 'c2', 'c3']);
+const MAX_BET = 5000, MAX_TOTAL = 20000, BET_GAP = 3500, BIG_WIN = 5000;
+function roulettePay(b, n) {
+  let w = 0;
+  if (b.k === 'n') w = b.v === n ? 36 : 0;
+  else if (n === 0) w = 0;
+  else switch (b.k) {
+    case 'red': w = RED.has(n) ? 2 : 0; break;
+    case 'black': w = RED.has(n) ? 0 : 2; break;
+    case 'odd': w = n % 2 ? 2 : 0; break;
+    case 'even': w = n % 2 ? 0 : 2; break;
+    case 'low': w = n <= 18 ? 2 : 0; break;
+    case 'high': w = n >= 19 ? 2 : 0; break;
+    case 'd1': w = n <= 12 ? 3 : 0; break;
+    case 'd2': w = n > 12 && n <= 24 ? 3 : 0; break;
+    case 'd3': w = n > 24 ? 3 : 0; break;
+    case 'c1': w = n % 3 === 1 ? 3 : 0; break;
+    case 'c2': w = n % 3 === 2 ? 3 : 0; break;
+    case 'c3': w = n % 3 === 0 ? 3 : 0; break;
+  }
+  return w * b.a;
+}
 
 /* ---------- yardımcılar ---------- */
 function safeEq(a, b) {
@@ -294,7 +346,9 @@ function applyPf(p, m, now) {
   for (const id of m.owned) if (typeof id === 'string' && PRICE.has(id)) set.add(id);
   for (const id of DEFAULT_OWNED) set.add(id);
   const owned = [...set];
-  const gold = Math.floor(num(m.gold, 0, 1e9, a.gold));
+  let gold = Math.floor(num(m.gold, 0, 1e9, a.gold));
+  if (now < (p.holdUntil || 0)) gold = a.gold;                          // bahis sonucu istemciye ulaşana kadar sunucu altını geçerli
+  else if (now - (p.rewT || 0) < 4000) gold = Math.max(gold, a.gold);   // yeni verilen ödül ezilmesin
   const eq = cleanEq(m.eq);
   for (const k of ['c', 'h', 'o', 'd']) if (!set.has(eq[k])) eq[k] = a.eq[k];
   const dW = wealthOf(gold, owned) - wealthOf(a.gold, a.owned);
@@ -344,12 +398,13 @@ function doJoin(c, m) {
   const name = a.name;
   const p = {
     id: nextId++, name, acct: a, eq: a.eq, gold: a.gold, role: '', muted: false,
-    st: [0, 0, 12, 0, 'idle', 'd1', 'lobby', 0], dirty: false, conn: c, chatTok: 4, chatT: Date.now(), admT: Date.now(), admN: 0
+    st: [0, 0, 12, 0, 'idle', 'd1', 'lobby', 0], dirty: false, conn: c, chatTok: 4, chatT: Date.now(), admT: Date.now(), admN: 0,
+    hp: PVP.hp, dead: 0, shotT: 0, kills: new Map(), betT: 0, holdUntil: 0, rewT: 0, rtcN: 0, rtcT: Date.now()
   };
   p.st[5] = p.eq.d;
   a.budT = a.budT || Date.now();
   c.p = p; players.set(p.id, p);
-  c.send({ t: 'welcome', id: p.id, name: p.name, v: 1, n: players.size, players: [...players.values()].filter(x => x !== p).map(info) });
+  c.send({ t: 'welcome', id: p.id, name: p.name, v: 1, n: players.size, ice: ICE, players: [...players.values()].filter(x => x !== p).map(info) });
   broadcast({ t: 'join', p: info(p) }, p.id);
   log('+', p.name, `(${players.size})`);
 }
@@ -368,6 +423,7 @@ function onMsg(c, txt) {
     case 'st': {
       const a = m.a;
       if (!Array.isArray(a) || a.length < 8) return;
+      if (a[6] === 'pvp' && p.st[6] !== 'pvp') { p.hp = PVP.hp; p.dead = 0; }
       p.st = [
         num(a[0], -130, 130, 0), num(a[1], 0, 12, 0), num(a[2], -130, 130, 0), num(a[3], -10, 10, 0),
         STATES.has(a[4]) ? a[4] : 'idle', typeof a[5] === 'string' && ID_RE.test(a[5]) ? a[5] : p.eq.d,
@@ -377,6 +433,19 @@ function onMsg(c, txt) {
       return;
     }
     case 'pf': return applyPf(p, m, now);
+    case 'rtc': {                                    // sesli sohbet sinyalleşmesi (WebRTC offer/answer/ICE), ses sunucudan geçmez
+      if (p.muted) return;
+      p.rtcN = Math.max(0, p.rtcN - (now - p.rtcT) / 25) + 1; p.rtcT = now;
+      if (p.rtcN > 60) return;
+      const q = players.get(Number(m.to));
+      if (!q || q === p || !m.d || typeof m.d !== 'object') return;
+      let sz = 0; try { sz = JSON.stringify(m.d).length; } catch (e) { return; }
+      if (sz > 6000) return;
+      q.conn.send({ t: 'rtc', from: p.id, d: m.d });
+      return;
+    }
+    case 'shot': return doShot(p, m, now);
+    case 'bet': return doBet(p, m, now);
     case 'chat': {
       const msg = cleanText(m.m, 160);
       if (!msg) return;
@@ -399,6 +468,97 @@ function onMsg(c, txt) {
     case 'logout': { if (p.role) setRole(p, ''); return; }
     case 'adm': return adminAction(p, m, now);
   }
+}
+
+function pvpSend(obj, except) {
+  for (const q of players.values()) if (q !== except && q.st[6] === 'pvp') q.conn.send(obj, true);
+}
+function doShot(p, m, now) {
+  if (p.st[6] !== 'pvp' || p.dead || now - p.shotT < PVP.cd) return;
+  const o = m.o, d = m.d;
+  if (!Array.isArray(o) || !Array.isArray(d) || o.length < 3 || d.length < 3) return;
+  const ox = num(o[0], -130, 130, 0), oy = num(o[1], 0, 14, 1.6), oz = num(o[2], -130, 130, 0);
+  let dx = num(d[0], -1, 1, 0), dy = num(d[1], -1, 1, 0), dz = num(d[2], -1, 1, 0);
+  const len = Math.hypot(dx, dy, dz);
+  if (len < .5) return;
+  dx /= len; dy /= len; dz /= len;
+  if (Math.hypot(ox - p.st[0], oz - p.st[2]) > 6) return;            // ateş noktası oyuncunun yakınında olmalı
+  p.shotT = now;
+  let tMax = Math.min(PVP.range, wallT(ox, oz, dx, dz));
+  for (const c of COVER) {                                            // siperler mermiyi durdurur (4 birim yüksek)
+    const t = rayCircle(ox, oz, dx, dz, c[0], c[1], c[2]);
+    if (t >= 0 && t < tMax && oy + dy * t <= 4) tMax = t;
+  }
+  let best = null, bt = tMax, head = false;
+  for (const q of players.values()) {
+    if (q === p || q.st[6] !== 'pvp' || q.dead) continue;
+    const t = rayCircle(ox, oz, dx, dz, q.st[0], q.st[2], PVP.rad);
+    if (t < 0 || t >= bt) continue;
+    const y = oy + dy * t, y0 = q.st[1];
+    if (y < y0 || y > y0 + PVP.h) continue;
+    best = q; bt = t; head = y > y0 + 1.5;
+  }
+  pvpSend({ t: 'sfx', id: p.id, o: [ox, oy, oz].map(v => +v.toFixed(2)), e: [ox + dx * bt, oy + dy * bt, oz + dz * bt].map(v => +v.toFixed(2)) }, p);
+  if (!best) return;
+  best.hp = Math.max(0, best.hp - (head ? PVP.head : PVP.dmg));
+  const killed = best.hp <= 0;
+  p.conn.send({ t: 'hm', h: head ? 1 : 0, k: killed ? 1 : 0 });
+  best.conn.send({ t: 'hp', hp: best.hp, by: p.name, ms: PVP.respawn });
+  if (!killed) return;
+  best.dead = now + PVP.respawn;
+  pvpSend({ t: 'kf', k: p.name, v: best.name, h: head ? 1 : 0 });
+  const last = p.kills.get(best.id) || 0;                             // aynı kişiyi art arda öldürerek altın basmayı engelle
+  if (p.acct !== best.acct && now - last > PVP.sameVictimMs) {
+    p.kills.set(best.id, now);
+    const a = p.acct;
+    a.gold += PVP.reward; p.gold = a.gold; p.rewT = now; saveUsers();
+    p.conn.send({ t: 'gold', g: a.gold, d: PVP.reward });
+    broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id);
+  }
+  const v = best;
+  setTimeout(() => {
+    if (players.get(v.id) !== v) return;
+    v.hp = PVP.hp; v.dead = 0;
+    if (v.st[6] === 'pvp') { const sp = SPAWNS[crypto.randomInt(SPAWNS.length)]; v.conn.send({ t: 'resp', x: sp[0], z: sp[1] }); }
+  }, PVP.respawn);
+}
+
+function doBet(p, m, now) {
+  const a = p.acct, c = p.conn;
+  if (p.st[6] !== 'casino') return c.send({ t: 'berr', c: 'zone', gold: a.gold });
+  if (now < p.betT) return c.send({ t: 'berr', c: 'fast', gold: a.gold });
+  let total = 0, bets = null;
+  if (m.g === 'roul') {
+    if (!Array.isArray(m.bets) || !m.bets.length || m.bets.length > 24) return;
+    bets = [];
+    for (const b of m.bets) {
+      if (!b || typeof b.k !== 'string' || !BET_KINDS.has(b.k)) return;
+      const amt = Math.floor(Number(b.a));
+      if (!(amt >= 1 && amt <= MAX_BET)) return;
+      const v = b.k === 'n' ? Math.floor(Number(b.v)) : 0;
+      if (b.k === 'n' && !(v >= 0 && v <= 36)) return;
+      bets.push({ k: b.k, v, a: amt }); total += amt;
+    }
+    if (total > MAX_TOTAL) return;
+  } else if (m.g === 'wof') {
+    total = Math.floor(Number(m.a));
+    if (!(total >= 1 && total <= MAX_BET)) return;
+  } else return;
+  if (total > a.gold) return c.send({ t: 'berr', c: 'poor', gold: a.gold });
+  p.betT = now + BET_GAP; p.holdUntil = now + 6000;
+  let res;
+  if (m.g === 'roul') {
+    const n = crypto.randomInt(0, 37);
+    let pay = 0; for (const b of bets) pay += roulettePay(b, n);
+    a.gold += pay - total; res = { t: 'bres', g: 'roul', n, bet: total, pay, gold: a.gold };
+  } else {
+    const seg = crypto.randomInt(0, WHEEL.length), mult = WHEEL[seg], pay = Math.floor(total * mult);
+    a.gold += pay - total; res = { t: 'bres', g: 'wof', seg, mult, bet: total, pay, gold: a.gold };
+  }
+  p.gold = a.gold; saveUsers();
+  c.send(res);
+  broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id);
+  if (res.pay - total >= BIG_WIN) setTimeout(() => broadcast({ t: 'big', n: p.name, w: res.pay - total, g: res.g }), 5200);
 }
 
 function adminAction(p, m, now) {
