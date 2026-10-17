@@ -54,9 +54,9 @@ let ICE = null;
 try { const j = JSON.parse(process.env.ICE_SERVERS || 'null'); if (Array.isArray(j) && j.length) ICE = j.slice(0, 6); } catch (e) { }
 
 /* ---------- PVP arena ayarları (istemcideki PCOVER / PSPAWN ile aynı olmalı) ---------- */
-const PVP = { cx: 0, cz: 100, half: 15, hp: 100, dmg: 25, head: 50, cd: 190, range: 70, rad: 0.55, h: 1.85, respawn: 3000, reward: 60, sameVictimMs: 30000 };
-const COVER = [[-7, 93, 1.1], [7, 93, 1.1], [-7, 107, 1.1], [7, 107, 1.1], [0, 100, 1.4], [-12, 100, .9], [12, 100, .9]];
-const SPAWNS = [[-12, 88], [12, 88], [-12, 112], [12, 112], [0, 88], [0, 112]];
+const PVP = { cx: 0, cz: 100, half: 20, hp: 100, dmg: 25, head: 50, cd: 190, range: 70, rad: 0.55, h: 1.85, respawn: 3000, reward: 20, sameVictimMs: 60000 };
+const COVER = [[-9, 91, 1.1], [9, 91, 1.1], [-9, 109, 1.1], [9, 109, 1.1], [0, 100, 1.5], [-16, 100, 1.0], [16, 100, 1.0], [-15, 88, .9], [15, 88, .9], [-15, 112, .9], [15, 112, .9], [0, 90, .8], [0, 110, .8]];
+const SPAWNS = [[-17, 83], [17, 83], [-17, 117], [17, 117], [0, 83], [0, 117]];
 function rayCircle(ox, oz, dx, dz, cx, cz, r) {      // XZ düzleminde ışın-daire kesişimi; en yakın t ya da -1
   const fx = ox - cx, fz = oz - cz, a = dx * dx + dz * dz;
   if (a < 1e-9) return -1;
@@ -76,9 +76,10 @@ function wallT(ox, oz, dx, dz) {                     // ışının arena duvarı
 
 /* ---------- şans oyunları (sunucu hakemlidir) ---------- */
 const RED = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
-const WHEEL = [0, .5, 0, 2, 0, .5, 0, 1.5, 0, .5, 0, 3, 0, .5, 0, 2, 0, .5, 0, 1.5, 0, .5, 0, 10];   // 24 dilim, geri dönüş ≈ %95,8
+const WHEEL = [0, .5, 0, 2, 0, .5, 0, 1.5, 0, .5, 0, 3, 0, .5, 0, 2, 0, .5, 0, 1, 0, .5, 0, 9];   // 24 dilim, geri dönüş ≈ %89,6
 const BET_KINDS = new Set(['n', 'red', 'black', 'odd', 'even', 'low', 'high', 'd1', 'd2', 'd3', 'c1', 'c2', 'c3']);
-const MAX_BET = 5000, MAX_TOTAL = 20000, BET_GAP = 3500, BIG_WIN = 5000;
+const MAX_BET = 2500, MAX_TOTAL = 10000, BET_GAP = 3500, BIG_WIN = 3000;
+const RK = 0.95;                       // rulette ödemelerden %5 kasa payı düşülür (geri dönüş ≈ %92,4)
 function roulettePay(b, n) {
   let w = 0;
   if (b.k === 'n') w = b.v === n ? 36 : 0;
@@ -97,7 +98,7 @@ function roulettePay(b, n) {
     case 'c2': w = n % 3 === 2 ? 3 : 0; break;
     case 'c3': w = n % 3 === 0 ? 3 : 0; break;
   }
-  return w * b.a;
+  return Math.floor(w * b.a * RK);
 }
 
 /* ---------- yardımcılar ---------- */
@@ -217,10 +218,11 @@ class Conn {
 }
 
 /* ---------- hesaplar (kalıcı) ---------- */
-const PRICE = new Map([["c1",0],["c2",150],["c3",200],["c4",200],["c5",320],["c6",320],["c7",350],["c8",700],["c9",750],["c10",1400],["o1",0],["o2",180],["o3",380],["o4",750],["o5",1500],["o6",3500],["h1",0],["h6",170],["h7",190],["h2",330],["h8",340],["h4",700],["h5",750],["h9",800],["h3",1400],["h10",1650],["d1",0],["d5",180],["d2",330],["d6",350],["d4",720],["d7",700],["d3",1400],["d8",1500],["d9",3200]]);
+const PS = v => Math.round(v * 1.5 / 10) * 10;   // istemcideki PS ile aynı: tüm eşya / kasa fiyatları x1,5
+const PRICE = new Map([["c1",0],["c2",150],["c3",200],["c4",200],["c5",320],["c6",320],["c7",350],["c8",700],["c9",750],["c10",1400],["o1",0],["o2",180],["o3",380],["o4",750],["o5",1500],["o6",3500],["h1",0],["h6",170],["h7",190],["h2",330],["h8",340],["h4",700],["h5",750],["h9",800],["h3",1400],["h10",1650],["d1",0],["d5",180],["d2",330],["d6",350],["d4",720],["d7",700],["d3",1400],["d8",1500],["d9",3200]].map(([k, v]) => [k, PS(v)]));
 const DEFAULT_OWNED = ['c1', 'h1', 'o1', 'd1'];
-const START_GOLD = 1000;
-const BUD_RATE = 2, BUD_CAP = 6000, BUD_START = 4000;   // sunucunun izin verdiği en hızlı servet artışı (altın/sn, üst sınır)
+const START_GOLD = 500;
+const BUD_RATE = 0.6, BUD_CAP = 6000, BUD_START = 3000;   // sunucunun izin verdiği en hızlı servet artışı (altın/sn, üst sınır)
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 let users = Object.create(null);
 try { Object.assign(users, JSON.parse(fs.readFileSync(USERS_FILE, 'utf8')) || {}); } catch (e) { }
@@ -399,7 +401,7 @@ function doJoin(c, m) {
   const p = {
     id: nextId++, name, acct: a, eq: a.eq, gold: a.gold, role: '', muted: false,
     st: [0, 0, 12, 0, 'idle', 'd1', 'lobby', 0], dirty: false, conn: c, chatTok: 4, chatT: Date.now(), admT: Date.now(), admN: 0,
-    hp: PVP.hp, dead: 0, shotT: 0, kills: new Map(), betT: 0, holdUntil: 0, rewT: 0, rtcN: 0, rtcT: Date.now()
+    hp: PVP.hp, dead: 0, shotT: 0, kills: new Map(), betT: 0, holdUntil: 0, rewT: 0, rtcN: 0, rtcT: Date.now(), bj: null, mn: null
   };
   p.st[5] = p.eq.d;
   a.budT = a.budT || Date.now();
@@ -446,6 +448,8 @@ function onMsg(c, txt) {
     }
     case 'shot': return doShot(p, m, now);
     case 'bet': return doBet(p, m, now);
+    case 'bj': return bjAct(p, m, now);
+    case 'mn': return mnAct(p, m, now);
     case 'chat': {
       const msg = cleanText(m.m, 160);
       if (!msg) return;
@@ -523,10 +527,132 @@ function doShot(p, m, now) {
   }, PVP.respawn);
 }
 
+/* ---------- blackjack (sunucu hakemlidir) ---------- */
+// kurallar: sonsuz deste · kasa yumuşak 17'de çeker · blackjack 3:2 · bölme / sigorta yok · iki katlama ilk iki kartta serbest
+const BJ_GAP = 1800, MN_GAP = 1500;
+const bjDraw = () => crypto.randomInt(52);
+function bjVal(cs) {
+  let t = 0, a = 0;
+  for (const c of cs) { const r = c % 13; if (r === 0) { a++; t += 11; } else t += r >= 9 ? 10 : r + 1; }
+  while (t > 21 && a) { t -= 10; a--; }
+  return { v: t, soft: a > 0 };
+}
+function bjView(h, res, pay, gold) {
+  const over = !!res;
+  return { t: 'bjs', st: over ? 'done' : 'play', p: h.p.slice(), d: over ? h.d.slice() : [h.d[0]], res: res || '', bet: h.bet, pay: pay || 0, gold, dbl: !over && h.p.length === 2 && !h.dd };
+}
+function bjFinish(p, now, res, pay) {
+  const h = p.bj, a = p.acct;
+  a.gold += pay; p.gold = a.gold; p.rewT = now; p.holdUntil = now + 3000; p.bj = null; saveUsers();
+  broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id);
+  if (pay - h.bet >= BIG_WIN) setTimeout(() => broadcast({ t: 'big', n: p.name, w: pay - h.bet, g: 'bj' }), 1200);
+  return bjView(h, res, pay, a.gold);
+}
+function bjStand(p, now) {
+  const h = p.bj, pv = bjVal(h.p).v;
+  for (; ;) { const dv = bjVal(h.d); if (dv.v < 17 || (dv.v === 17 && dv.soft)) h.d.push(bjDraw()); else break; }
+  const dv = bjVal(h.d).v;
+  if (dv > 21) return bjFinish(p, now, 'dbust', h.bet * 2);
+  if (pv > dv) return bjFinish(p, now, 'win', h.bet * 2);
+  if (pv < dv) return bjFinish(p, now, 'lose', 0);
+  return bjFinish(p, now, 'push', h.bet);
+}
+function bjStart(p, m, now) {
+  const a = p.acct, c = p.conn, bet = Math.floor(Number(m.a));
+  if (!(bet >= 1 && bet <= MAX_BET)) return;
+  if (bet > a.gold) return c.send({ t: 'berr', c: 'poor', gold: a.gold });
+  p.betT = now + BJ_GAP; p.holdUntil = now + 8000;
+  a.gold -= bet; p.gold = a.gold;
+  const h = { bet, p: [bjDraw(), bjDraw()], d: [bjDraw(), bjDraw()], dd: false };
+  p.bj = h; saveUsers();
+  const pn = bjVal(h.p).v === 21, dn = bjVal(h.d).v === 21;
+  if (pn && dn) return c.send(bjFinish(p, now, 'push', bet));
+  if (pn) return c.send(bjFinish(p, now, 'bj', Math.floor(bet * 2.5)));
+  if (dn) return c.send(bjFinish(p, now, 'lose', 0));
+  c.send(bjView(h, '', 0, a.gold));
+}
+function bjAct(p, m, now) {
+  const h = p.bj, c = p.conn, a = p.acct;
+  if (!h) return c.send({ t: 'berr', c: 'nogame', gold: a.gold });
+  p.holdUntil = now + 8000;
+  const act = m.a;
+  if (act === 'hit') {
+    h.p.push(bjDraw()); const v = bjVal(h.p).v;
+    if (v > 21) return c.send(bjFinish(p, now, 'bust', 0));
+    if (v === 21) return c.send(bjStand(p, now));
+    return c.send(bjView(h, '', 0, a.gold));
+  }
+  if (act === 'double') {
+    if (h.p.length !== 2 || h.dd) return;
+    if (h.bet > a.gold) return c.send({ t: 'berr', c: 'poor', gold: a.gold });
+    a.gold -= h.bet; p.gold = a.gold; h.bet *= 2; h.dd = true; h.p.push(bjDraw());
+    if (bjVal(h.p).v > 21) return c.send(bjFinish(p, now, 'bust', 0));
+    return c.send(bjStand(p, now));
+  }
+  if (act === 'stand') return c.send(bjStand(p, now));
+}
+
+/* ---------- mines (sunucu hakemlidir) ---------- */
+// 5x5 tahta · her güvenli karede çarpan artar · %5 kasa payı · en fazla x100
+const MN_RTP = 0.95, MN_CAP = 100, MN_N = 25;
+function mnMult(m, k) {
+  if (k <= 0) return 1;
+  let x = MN_RTP;
+  for (let i = 0; i < k; i++) x *= (MN_N - i) / (MN_N - m - i);
+  return Math.min(MN_CAP, Math.floor(x * 100) / 100);
+}
+function mnView(g, st, hit, pay, gold) {
+  const k = g.rev.length;
+  return { t: 'mns', st, m: g.m, bet: g.bet, rev: g.rev.slice(), mult: mnMult(g.m, k), next: st === 'play' ? mnMult(g.m, k + 1) : 0, hit: hit == null ? -1 : hit, mines: st === 'play' ? [] : [...g.mines], pay: pay || 0, gold };
+}
+function mnFinish(p, now, st, hit) {
+  const g = p.mn, a = p.acct;
+  const pay = st === 'cash' ? Math.floor(g.bet * mnMult(g.m, g.rev.length)) : 0;
+  a.gold += pay; p.gold = a.gold; p.rewT = now; p.holdUntil = now + 3000; p.mn = null; saveUsers();
+  broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id);
+  if (pay - g.bet >= BIG_WIN) setTimeout(() => broadcast({ t: 'big', n: p.name, w: pay - g.bet, g: 'mines' }), 1200);
+  return mnView(g, st, hit, pay, a.gold);
+}
+function mnStart(p, m, now) {
+  const a = p.acct, c = p.conn, bet = Math.floor(Number(m.a)), mc = Math.floor(Number(m.m));
+  if (!(bet >= 1 && bet <= MAX_BET) || !(mc >= 1 && mc <= 24)) return;
+  if (bet > a.gold) return c.send({ t: 'berr', c: 'poor', gold: a.gold });
+  p.betT = now + MN_GAP; p.holdUntil = now + 8000;
+  a.gold -= bet; p.gold = a.gold;
+  const idx = []; for (let i = 0; i < MN_N; i++) idx.push(i);
+  for (let i = MN_N - 1; i > 0; i--) { const j = crypto.randomInt(i + 1); const t = idx[i]; idx[i] = idx[j]; idx[j] = t; }
+  p.mn = { bet, m: mc, mines: new Set(idx.slice(0, mc)), rev: [] };
+  saveUsers();
+  c.send(mnView(p.mn, 'play', null, 0, a.gold));
+}
+function mnAct(p, m, now) {
+  const g = p.mn, c = p.conn, a = p.acct;
+  if (!g) return c.send({ t: 'berr', c: 'nogame', gold: a.gold });
+  p.holdUntil = now + 8000;
+  if (m.a === 'cash') { if (!g.rev.length) return; return c.send(mnFinish(p, now, 'cash')); }
+  if (m.a !== 'pick') return;
+  const i = Math.floor(Number(m.i));
+  if (!(i >= 0 && i < MN_N) || g.rev.includes(i)) return;
+  if (g.mines.has(i)) return c.send(mnFinish(p, now, 'lost', i));
+  g.rev.push(i);
+  if (g.rev.length >= MN_N - g.m || mnMult(g.m, g.rev.length) >= MN_CAP) return c.send(mnFinish(p, now, 'cash'));
+  c.send(mnView(g, 'play', null, 0, a.gold));
+}
+function gamesAbort(p) {            // oyuncu bağlantısı koptuysa açık eller sonuçlanır
+  const now = Date.now();
+  try {
+    if (p.bj) bjStand(p, now);
+    if (p.mn) { if (p.mn.rev.length) mnFinish(p, now, 'cash'); else { p.acct.gold += p.mn.bet; p.gold = p.acct.gold; p.mn = null; saveUsers(); } }
+  } catch (e) { }
+}
+
 function doBet(p, m, now) {
   const a = p.acct, c = p.conn;
   if (p.st[6] !== 'casino') return c.send({ t: 'berr', c: 'zone', gold: a.gold });
   if (now < p.betT) return c.send({ t: 'berr', c: 'fast', gold: a.gold });
+  if (p.bj || p.mn) return c.send({ t: 'berr', c: 'busy', gold: a.gold });
+  if (m.g === 'bj') return bjStart(p, m, now);
+  if (m.g === 'mines') return mnStart(p, m, now);
   let total = 0, bets = null;
   if (m.g === 'roul') {
     if (!Array.isArray(m.bets) || !m.bets.length || m.bets.length > 24) return;
@@ -604,6 +730,7 @@ function onClose(c) {
   if (n > 0) ipCount.set(c.ip, n); else ipCount.delete(c.ip);
   const p = c.p;
   if (p && players.get(p.id) === p) {
+    gamesAbort(p);
     players.delete(p.id);
     broadcast({ t: 'leave', id: p.id });
     saveUsers();
