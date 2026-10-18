@@ -521,6 +521,7 @@ function onMsg(c, txt) {
     case 'tip': return doTip(p, m, now);
     case 'dep': return depMsg(p, m, now);
     case 'rw': return rwMsg(p, m, now);
+    case 'rng': return rngMsg(p, m, now);
     case 'tr': return trMsg(p, m, now);
     case 'bj': return bjAct(p, m, now);
     case 'mn': return mnAct(p, m, now);
@@ -986,6 +987,30 @@ function depMsg(p, m, now) {
     }
     const q2 = onlineAcct(users[d.key] || {}); if (q2) q2.conn.send({ t: 'dep', a: 'mine', list: Object.values(deps).filter(x => x.key === d.key).sort((x, y) => y.at - x.at).slice(0, 12).map(x => depView(x)) });
     return ownersCast({ t: 'dep', a: 'olist', list: depOList() });
+  }
+}
+
+/* ---------- HEDEF POLİGONU: günde 1 kez, skora göre coin ---------- */
+const RNG_TZ = +process.env.DAY_TZ_H || 3, RNG_MAX = +process.env.RNG_MAX_SCORE || 800;     // gün sıfırlaması: UTC+3 gece yarısı
+const dayKeyOf = t => new Date(t + RNG_TZ * 36e5).toISOString().slice(0, 10);
+const dayLeft = t => 864e5 - ((t + RNG_TZ * 36e5) % 864e5);
+const rngReward = sc => sc >= 150 ? 100 : sc >= 100 ? 50 : 20;
+function rngMsg(p, m, now) {
+  const a = p.acct, c = p.conn, act = String(m.a || '');
+  if (now - (p.rngT || 0) < 400) return; p.rngT = now;
+  const day = dayKeyOf(now);
+  if (act === 'start') {
+    if (a.rngDay === day) return c.send({ t: 'rng', a: 'no', left: dayLeft(now) });
+    a.rngDay = day; a.rngOn = now; saveUsers();                    // hak başta düşer: yenileyerek tekrar denenemez
+    return c.send({ t: 'rng', a: 'go' });
+  }
+  if (act === 'end') {
+    if (!a.rngOn) return;
+    const el = now - a.rngOn, sc = Math.floor(Number(m.s)); a.rngOn = 0;
+    if (!(sc >= 0 && sc <= RNG_MAX) || el < 25000 || el > 180000) return c.send({ t: 'rng', a: 'bad' });
+    const g = rngReward(sc); a.gold += g; p.gold = a.gold; saveUsers();
+    pfSync(p, { m: 'rng', n: g, s: sc });
+    broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id);
   }
 }
 
