@@ -78,7 +78,7 @@ function wallT(ox, oz, dx, dz) {                     // ışının arena duvarı
 const RED = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
 const WHEEL = [0, .5, 0, 2, 0, .5, 0, 1.5, 0, .5, 0, 3, 0, .5, 0, 2, 0, .5, 0, 1, 0, .5, 0, 9];   // 24 dilim, geri dönüş ≈ %89,6
 const BET_KINDS = new Set(['n', 'red', 'black', 'odd', 'even', 'low', 'high', 'd1', 'd2', 'd3', 'c1', 'c2', 'c3']);
-const MAX_BET = 2500, MAX_TOTAL = 10000, BET_GAP = 3500, BIG_WIN = 3000;
+const MAX_BET = 1e12, MAX_TOTAL = 1e12, BET_GAP = 3500, BIG_WIN = 3000;     // bahis üst sınırı yok (yalnızca bakiye ve taşma koruması)
 const RK = 0.95;                       // rulette ödemelerden %5 kasa payı düşülür (geri dönüş ≈ %92,4)
 function roulettePay(b, n) {
   let w = 0;
@@ -304,6 +304,7 @@ function wagerAdd(a, n, g) {
   a.wkW = (a.wkW || 0) + n; a.moW = (a.moW || 0) + n;
   const q = onlineAcct(a);
   if (q) q.conn.send({ t: 'wag', w: nw, tier: tierOf(nw), up: tierOf(nw) > tierOf(old) ? 1 : 0 });
+  if (q && tierOf(nw) > tierOf(old)) broadcast({ t: 'rank', id: q.id, tr: tierOf(nw) }, q.id);
 }
 function rwInfo(a) {
   const now = Date.now(), tier = tierOf(a.wag || 0), key = a.name.toLowerCase();
@@ -441,7 +442,7 @@ const ipCount = new Map();
 const authTries = new Map();    // ip -> [zaman damgaları]
 let nextId = 1;
 
-const info = p => ({ id: p.id, name: p.name, eq: p.eq, gold: p.gold, role: p.role, m: p.muted ? 1 : 0, st: p.st });
+const info = p => ({ id: p.id, name: p.name, eq: p.eq, gold: p.gold, role: p.role, tr: tierOf(p.acct.wag || 0), m: p.muted ? 1 : 0, st: p.st });
 
 function broadcast(obj, exceptId, droppable) {
   const fr = frame(1, Buffer.from(JSON.stringify(obj)));
@@ -801,7 +802,7 @@ function doBet(p, m, now) {
   if (m.g === 'mines') return mnStart(p, m, now);
   let total = 0, bets = null;
   if (m.g === 'roul') {
-    if (!Array.isArray(m.bets) || !m.bets.length || m.bets.length > 24) return;
+    if (!Array.isArray(m.bets) || !m.bets.length || m.bets.length > 64) return;
     bets = [];
     for (const b of m.bets) {
       if (!b || typeof b.k !== 'string' || !BET_KINDS.has(b.k)) return;
@@ -853,7 +854,7 @@ function rrBets(p, m, now) {
   const tok = Math.min(10, (p.rbTok == null ? 10 : p.rbTok) + (now - (p.rbT || now)) / 150);
   if (tok < 1) return;
   p.rbTok = tok - 1; p.rbT = now;
-  if (!Array.isArray(m.bets) || m.bets.length > 24) return;
+  if (!Array.isArray(m.bets) || m.bets.length > 64) return;
   const bets = []; let total = 0;
   for (const b of m.bets) {
     if (!b || typeof b.k !== 'string' || !BET_KINDS.has(b.k)) return;
