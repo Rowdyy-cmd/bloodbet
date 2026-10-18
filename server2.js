@@ -289,14 +289,19 @@ const TIERS = [30000, 80000, 150000, 250000, 400000, 650000, 1000000, 1600000, 2
 const tierOf = w => { let t = 0; while (t < TIERS.length && w >= TIERS[t]) t++; return t; };
 const RB_RATES = [0.05, 0.052, 0.054, 0.056, 0.058, 0.06, 0.062, 0.064, 0.066, 0.068, 0.07];   // rank (-,I..X) -> kasa avantajından geri dönen pay
 const EDGE = { roul: 0.076, mines: 0.05, wof: 0.104, bj: 0.02 };                                    // oyun başına kasa avantajı
-const WK_MS = 7 * 864e5, MO_MS = 30 * 864e5, WK_PCT = 0.0005, MO_PCT = 0.001, AFF_PCT = 0.03;
+// Haftalık bonus her pazartesi 06:00'da (TSİ), aylık bonus her ayın 1'inde 00:00'da (TSİ) yenilenir
+const BTZ = +process.env.DAY_TZ_H || 3, WK_HOUR = 6;
+const wkIdx = t => Math.floor(((t + (BTZ - WK_HOUR) * 36e5) / 864e5 + 3) / 7);                     // 1970-01-01 perşembe -> pazartesi tabanlı hafta no
+const wkNext = t => ((wkIdx(t) + 1) * 7 - 3) * 864e5 - (BTZ - WK_HOUR) * 36e5;
+const moIdx = t => { const d = new Date(t + BTZ * 36e5); return d.getUTCFullYear() * 12 + d.getUTCMonth(); };
+const moNext = t => { const d = new Date(t + BTZ * 36e5); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) - BTZ * 36e5; };
+const WK_PCT = 0.0005, MO_PCT = 0.001, AFF_PCT = 0.03;
 function wagerAdd(a, n, g) {
   if (!(n > 0)) return;
   const old = a.wag || 0, nw = old + n, now = Date.now();
   a.wag = nw;
   a.rb = (a.rb || 0) + n * (EDGE[g] || 0.05) * RB_RATES[tierOf(nw)];
   a.wkW = (a.wkW || 0) + n; a.moW = (a.moW || 0) + n;
-  if (!a.wkAt) a.wkAt = now; if (!a.moAt) a.moAt = now;
   const q = onlineAcct(a);
   if (q) q.conn.send({ t: 'wag', w: nw, tier: tierOf(nw), up: tierOf(nw) > tierOf(old) ? 1 : 0 });
 }
@@ -305,8 +310,8 @@ function rwInfo(a) {
   const per = (w, pct) => Math.floor((w || 0) * pct * (1 + 0.1 * tier));
   let n = 0; for (const u of Object.values(users)) if (u.ref === key) n++;
   return { t: 'rw', a: 'info', tier, wag: a.wag || 0, rates: RB_RATES.map(r => +(r * 100).toFixed(1)), rb: Math.floor(a.rb || 0), rbTot: a.rbTot || 0,
-    wk: { amt: per(a.wkW, WK_PCT), left: Math.max(0, (a.wkAt || now) + WK_MS - now), w: Math.floor(a.wkW || 0) },
-    mo: { amt: per(a.moW, MO_PCT), left: Math.max(0, (a.moAt || now) + MO_MS - now), w: Math.floor(a.moW || 0) },
+    wk: { amt: per(a.wkW, WK_PCT), left: a.wkP === wkIdx(now) ? Math.max(1, wkNext(now) - now) : 0, w: Math.floor(a.wkW || 0) },
+    mo: { amt: per(a.moW, MO_PCT), left: a.moP === moIdx(now) ? Math.max(1, moNext(now) - now) : 0, w: Math.floor(a.moW || 0) },
     aff: { code: a.name, ref: a.ref && users[a.ref] ? users[a.ref].name : '', n, earned: a.affEarn || 0, pct: AFF_PCT * 100 } };
 }
 function rwMsg(p, m, now) {
@@ -323,8 +328,8 @@ function rwMsg(p, m, now) {
   if (act === 'claim') {
     const info = rwInfo(a); let n = 0, k = String(m.k || '');
     if (k === 'rb') { n = Math.floor(a.rb || 0); if (n < 1) return err('min'); a.rb -= n; a.rbTot = (a.rbTot || 0) + n; }
-    else if (k === 'wk') { if (info.wk.left > 0) return err('wait'); n = info.wk.amt; if (n < 1) return err('min'); a.wkW = 0; a.wkAt = now; }
-    else if (k === 'mo') { if (info.mo.left > 0) return err('wait'); n = info.mo.amt; if (n < 1) return err('min'); a.moW = 0; a.moAt = now; }
+    else if (k === 'wk') { if (info.wk.left > 0) return err('wait'); n = info.wk.amt; if (n < 1) return err('min'); a.wkW = 0; a.wkP = wkIdx(now); }
+    else if (k === 'mo') { if (info.mo.left > 0) return err('wait'); n = info.mo.amt; if (n < 1) return err('min'); a.moW = 0; a.moP = moIdx(now); }
     else return;
     a.gold += n; p.gold = a.gold; saveUsers();
     pfSync(p, { m: 'rw', n, k });
