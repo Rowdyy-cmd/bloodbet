@@ -284,7 +284,56 @@ const RESERVED = new Set(['admin', 'owner', 'system', 'sistem', 'lobi', 'mod', '
 const validName = n => n.length >= 2 && n.length <= 14 && NAME_RE.test(n) && !RESERVED.has(n.toLowerCase());
 const tokHash = t => crypto.createHash('sha256').update(String(t)).digest('base64url');
 const wealthOf = (gold, owned) => gold + owned.reduce((s, id) => s + (PRICE.get(id) || 0), 0);
-const pubPf = a => ({ gold: a.gold, owned: a.owned, eq: a.eq });
+/* ---------- RANK: toplam wager'a (oynanan bahis) göre tier ---------- */
+const TIERS = [30000, 80000, 150000, 250000, 400000, 650000, 1000000, 1600000, 2500000, 4000000];   // Tier 1..10 için gereken toplam wager
+const tierOf = w => { let t = 0; while (t < TIERS.length && w >= TIERS[t]) t++; return t; };
+const RB_RATES = [0.05, 0.052, 0.054, 0.056, 0.058, 0.06, 0.062, 0.064, 0.066, 0.068, 0.07];   // rank (-,I..X) -> kasa avantajından geri dönen pay
+const EDGE = { roul: 0.076, mines: 0.05, wof: 0.104, bj: 0.02 };                                    // oyun başına kasa avantajı
+const WK_MS = 7 * 864e5, MO_MS = 30 * 864e5, WK_PCT = 0.0005, MO_PCT = 0.001, AFF_PCT = 0.03;
+function wagerAdd(a, n, g) {
+  if (!(n > 0)) return;
+  const old = a.wag || 0, nw = old + n, now = Date.now();
+  a.wag = nw;
+  a.rb = (a.rb || 0) + n * (EDGE[g] || 0.05) * RB_RATES[tierOf(nw)];
+  a.wkW = (a.wkW || 0) + n; a.moW = (a.moW || 0) + n;
+  if (!a.wkAt) a.wkAt = now; if (!a.moAt) a.moAt = now;
+  const q = onlineAcct(a);
+  if (q) q.conn.send({ t: 'wag', w: nw, tier: tierOf(nw), up: tierOf(nw) > tierOf(old) ? 1 : 0 });
+}
+function rwInfo(a) {
+  const now = Date.now(), tier = tierOf(a.wag || 0), key = a.name.toLowerCase();
+  const per = (w, pct) => Math.floor((w || 0) * pct * (1 + 0.1 * tier));
+  let n = 0; for (const u of Object.values(users)) if (u.ref === key) n++;
+  return { t: 'rw', a: 'info', tier, wag: a.wag || 0, rates: RB_RATES.map(r => +(r * 100).toFixed(1)), rb: Math.floor(a.rb || 0), rbTot: a.rbTot || 0,
+    wk: { amt: per(a.wkW, WK_PCT), left: Math.max(0, (a.wkAt || now) + WK_MS - now), w: Math.floor(a.wkW || 0) },
+    mo: { amt: per(a.moW, MO_PCT), left: Math.max(0, (a.moAt || now) + MO_MS - now), w: Math.floor(a.moW || 0) },
+    aff: { code: a.name, ref: a.ref && users[a.ref] ? users[a.ref].name : '', n, earned: a.affEarn || 0, pct: AFF_PCT * 100 } };
+}
+function rwMsg(p, m, now) {
+  const a = p.acct, c = p.conn, act = String(m.a || ''), key = a.name.toLowerCase();
+  const err = code => c.send({ t: 'rw', a: 'err', c: code });
+  if (now - (p.rwT || 0) < 500) return; p.rwT = now;
+  if (act === 'info') return c.send(rwInfo(a));
+  if (act === 'ref') {
+    const tk = String(m.code || '').trim().toLowerCase(), t = users[tk];
+    if (!t) return err('none'); if (tk === key) return err('self'); if (a.ref) return err('has');
+    if ((a.depC || 0) > 0 || t.ref === key) return err('late');
+    a.ref = tk; saveUsers(); return c.send(rwInfo(a));
+  }
+  if (act === 'claim') {
+    const info = rwInfo(a); let n = 0, k = String(m.k || '');
+    if (k === 'rb') { n = Math.floor(a.rb || 0); if (n < 1) return err('min'); a.rb -= n; a.rbTot = (a.rbTot || 0) + n; }
+    else if (k === 'wk') { if (info.wk.left > 0) return err('wait'); n = info.wk.amt; if (n < 1) return err('min'); a.wkW = 0; a.wkAt = now; }
+    else if (k === 'mo') { if (info.mo.left > 0) return err('wait'); n = info.mo.amt; if (n < 1) return err('min'); a.moW = 0; a.moAt = now; }
+    else return;
+    a.gold += n; p.gold = a.gold; saveUsers();
+    pfSync(p, { m: 'rw', n, k });
+    broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id);
+    log('ödül', a.name, k, '+' + n);
+    return c.send(rwInfo(a));
+  }
+}
+const pubPf = a => ({ gold: a.gold, owned: a.owned, eq: a.eq, wag: a.wag || 0 });
 const loginTries = new Map();   // ip -> zaman damgaları
 const regTries = new Map();
 
@@ -471,6 +520,7 @@ function onMsg(c, txt) {
     case 'rb': return rrBets(p, m, now);
     case 'tip': return doTip(p, m, now);
     case 'dep': return depMsg(p, m, now);
+    case 'rw': return rwMsg(p, m, now);
     case 'tr': return trMsg(p, m, now);
     case 'bj': return bjAct(p, m, now);
     case 'mn': return mnAct(p, m, now);
@@ -651,7 +701,7 @@ function bjStart(p, m, now) {
   if (!(bet >= 1 && bet <= MAX_BET)) return;
   if (bet > a.gold) return c.send({ t: 'berr', c: 'poor', gold: a.gold });
   p.betT = now + BJ_GAP; p.holdUntil = now + 8000;
-  a.gold -= bet; p.gold = a.gold;
+  a.gold -= bet; p.gold = a.gold; wagerAdd(a, bet, 'bj');
   const h = { bet, p: [bjDraw(), bjDraw()], d: [bjDraw(), bjDraw()], dd: false };
   p.bj = h; saveUsers();
   const pn = bjVal(h.p).v === 21, dn = bjVal(h.d).v === 21;
@@ -674,7 +724,7 @@ function bjAct(p, m, now) {
   if (act === 'double') {
     if (h.p.length !== 2 || h.dd) return;
     if (h.bet > a.gold) return c.send({ t: 'berr', c: 'poor', gold: a.gold });
-    a.gold -= h.bet; p.gold = a.gold; h.bet *= 2; h.dd = true; h.p.push(bjDraw());
+    a.gold -= h.bet; p.gold = a.gold; wagerAdd(a, h.bet, 'bj'); h.bet *= 2; h.dd = true; h.p.push(bjDraw());
     if (bjVal(h.p).v > 21) return tx(p, bjFinish(p, now, 'bust', 0));
     return tx(p, bjStand(p, now));
   }
@@ -707,7 +757,7 @@ function mnStart(p, m, now) {
   if (!(bet >= 1 && bet <= MAX_BET) || !(mc >= 1 && mc <= 24)) return;
   if (bet > a.gold) return c.send({ t: 'berr', c: 'poor', gold: a.gold });
   p.betT = now + MN_GAP; p.holdUntil = now + 8000;
-  a.gold -= bet; p.gold = a.gold;
+  a.gold -= bet; p.gold = a.gold; wagerAdd(a, bet, 'mines');
   const idx = []; for (let i = 0; i < MN_N; i++) idx.push(i);
   for (let i = MN_N - 1; i > 0; i--) { const j = crypto.randomInt(i + 1); const t = idx[i]; idx[i] = idx[j]; idx[j] = t; }
   p.mn = { bet, m: mc, mines: new Set(idx.slice(0, mc)), rev: [] };
@@ -762,6 +812,7 @@ function doBet(p, m, now) {
   } else return;
   if (total > a.gold) return c.send({ t: 'berr', c: 'poor', gold: a.gold });
   p.betT = now + BET_GAP; p.holdUntil = now + 6000;
+  wagerAdd(a, total, 'wof');
   let res;
   if (m.g === 'roul') {
     const n = crypto.randomInt(0, 37);
@@ -816,7 +867,7 @@ function rrLock(now) {
   RR.n = n; RR.ph = 'spin'; RR.end = now + RR_SPIN;
   for (const e of RR.bets.values()) {
     if (e.total > e.acct.gold) { e.void = true; if (players.get(e.p.id) === e.p) e.p.conn.send({ t: 'rl', v: 1, gold: e.acct.gold }); continue; }
-    e.acct.gold -= e.total; e.p.gold = e.acct.gold; e.p.holdUntil = now + RR_SPIN + 3000; e.p.pfLock = now + RR_SPIN + 3000;
+    e.acct.gold -= e.total; wagerAdd(e.acct, e.total, 'roul'); e.p.gold = e.acct.gold; e.p.holdUntil = now + RR_SPIN + 3000; e.p.pfLock = now + RR_SPIN + 3000;
     if (players.get(e.p.id) === e.p) e.p.conn.send({ t: 'rl', v: 0, bet: e.total, gold: e.acct.gold });
   }
   saveUsers();
@@ -925,7 +976,10 @@ function depMsg(p, m, now) {
     else {
       const t = users[d.key]; if (!t) return err('none');
       d.st = 'ok'; d.upd = now; d.by = p.name; depSave(d);       // önce durumu kaydet: iki kez yatmasın
-      t.gold += d.coins; t.depC = (t.depC || 0) + d.usdC; saveUsers(true);
+      t.gold += d.coins; t.depC = (t.depC || 0) + d.usdC;
+      const rf = t.ref && users[t.ref];
+      if (rf) { const com = Math.floor(d.coins * AFF_PCT); if (com > 0) { rf.gold += com; rf.affEarn = (rf.affEarn || 0) + com; const rq = onlineAcct(rf); if (rq) { rq.gold = rf.gold; pfSync(rq, { m: 'aff', n: com, who: t.name }); } } }
+      saveUsers(true);
       const q = onlineAcct(t);
       if (q) { q.gold = t.gold; pfSync(q, { m: 'depok', n: d.coins }); broadcast({ t: 'me', id: q.id, eq: q.eq, gold: q.gold }, q.id); }
       log('yatırım onaylandı', d.name, '+' + d.coins, 'coin ($' + d.usdC / 100 + ') by', p.name);
