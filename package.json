@@ -1,6 +1,6 @@
 {
   "name": "bloodbet",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "private": true,
   "description": "BloodBet çok oyunculu sunucu",
   "main": "server2.js",

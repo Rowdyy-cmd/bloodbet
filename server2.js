@@ -52,6 +52,7 @@ const ID_RE = /^[a-z][0-9]{1,3}$/;
 
 let ICE = null;
 try { const j = JSON.parse(process.env.ICE_SERVERS || 'null'); if (Array.isArray(j) && j.length) ICE = j.slice(0, 6); } catch (e) { }
+if (!ICE) console.log('[ses] ICE_SERVERS ayarlı değil: sesli sohbet yalnızca STUN + herkese açık yedek TURN kullanır. NAT arkasındaki oyuncular için kendi TURN sunucunu ekle.');
 
 /* ---------- PVP arena ayarları (istemcideki PCOVER / PSPAWN ile aynı olmalı) ---------- */
 const PVP = { cx: 0, cz: 100, half: 20, hp: 100, dmg: 25, head: 50, cd: 190, range: 70, rad: 0.55, h: 1.85, respawn: 3000, reward: 20, sameVictimMs: 60000 };
