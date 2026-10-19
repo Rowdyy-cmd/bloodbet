@@ -1395,7 +1395,6 @@ if (require.main === module) {
     setTimeout(() => process.exit(0), 8000).unref();
     saveUsers(true).finally(() => { for (const c of conns) c.close(1001); server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 1500).unref(); });
   };
-  app.use('/public', express.static(__dirname + '/public'));
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
 }
 module.exports = { server, OWNER_CODE, ADMIN_CODE, players };
