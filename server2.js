@@ -52,7 +52,6 @@ const ID_RE = /^[a-z][0-9]{1,3}$/;
 
 let ICE = null;
 try { const j = JSON.parse(process.env.ICE_SERVERS || 'null'); if (Array.isArray(j) && j.length) ICE = j.slice(0, 6); } catch (e) { }
-if (!ICE) console.log('[ses] ICE_SERVERS ayarlı değil: sesli sohbet yalnızca STUN + herkese açık yedek TURN kullanır. NAT arkasındaki oyuncular için kendi TURN sunucunu ekle.');
 
 /* ---------- PVP arena ayarları (istemcideki PCOVER / PSPAWN ile aynı olmalı) ---------- */
 const PVP = { cx: 0, cz: 100, half: 20, hp: 100, dmg: 25, head: 50, cd: 190, range: 70, rad: 0.55, h: 1.85, respawn: 3000, reward: 20, sameVictimMs: 60000 };
@@ -256,7 +255,7 @@ async function loadRemote() {
   for (let i = 0; i + 1 < res.length; i += 2) {
     try { users[res[i]] = JSON.parse(res[i + 1]); lastSaved[res[i]] = res[i + 1]; } catch (e) { }
   }
-  await loadDepsRemote();
+  await loadDepsRemote(); await loadGwRemote();
   log('veritabanından', Object.keys(users).length, 'hesap yüklendi');
 }
 async function flushRemote() {              // sadece değişen hesapları yazar
@@ -529,6 +528,7 @@ function onMsg(c, txt) {
     case 'dep': return depMsg(p, m, now);
     case 'rw': return rwMsg(p, m, now);
     case 'rng': return rngMsg(p, m, now);
+    case 'gw': return gwMsg(p, m, now);
     case 'tr': return trMsg(p, m, now);
     case 'bj': return bjAct(p, m, now);
     case 'mn': return mnAct(p, m, now);
@@ -1020,6 +1020,88 @@ function rngMsg(p, m, now) {
     broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id);
   }
 }
+
+/* ---------- GIVEAWAY (sürpriz kutusu): ücretsiz katılım, ödül host'un coini ----------
+ * Herkes başlatabilir: ödül başlatırken host'un bakiyesinden düşer (owner için coin bedava). Süre, kazanan sayısı ve minimum tier ayarlanır.
+ * Süre dolunca kazananlar sunucu tarafından rastgele seçilir; ödül eşit bölünür, artan/katılımcısız kısım host'a iade edilir.
+ */
+const GW_MAX_ACTIVE = 8, GW_MIN_S = +process.env.GW_MIN_S || 30, GW_MAX_S = 7 * 86400, GW_MAX_WIN = 50;
+const gws = Object.create(null), GW_FILE = path.join(DATA_DIR, 'giveaways.json');
+try { Object.assign(gws, JSON.parse(fs.readFileSync(GW_FILE, 'utf8')) || {}); } catch (e) { }
+function gwSave() {
+  if (REMOTE) { redis(['SET', 'bloodbet:gws', JSON.stringify(gws)]).catch(e => log('giveaway kayıt hatası:', e.message)); return; }
+  try { const tmp = GW_FILE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(gws)); fs.renameSync(tmp, GW_FILE); } catch (e) { log('giveaway kayıt hatası:', e.message); }
+}
+async function loadGwRemote() { const r = await redis(['GET', 'bloodbet:gws']); if (r) { try { Object.assign(gws, JSON.parse(r)); } catch (e) { } } }
+const gwView = (g, key) => ({ id: g.id, host: g.hostName, prize: g.prize, win: g.win, tier: g.tier, left: Math.max(0, g.end - Date.now()), n: g.ent.length, me: key && g.ent.includes(key) ? 1 : 0, mine: key === g.hk ? 1 : 0, own: g.own ? 1 : 0 });
+const gwList = key => Object.values(gws).sort((x, y) => x.end - y.end).map(g => gwView(g, key));
+function gwCredit(key, n, msg) {
+  const a = users[key]; if (!a || !(n > 0)) return;
+  a.gold += n; const q = onlineAcct(a);
+  if (q) { q.gold = a.gold; pfSync(q, msg); broadcast({ t: 'me', id: q.id, eq: q.eq, gold: q.gold }, q.id); }
+}
+function gwMsg(p, m, now) {
+  const a = p.acct, c = p.conn, act = String(m.a || ''), key = a.name.toLowerCase();
+  const err = code => c.send({ t: 'gw', a: 'err', c: code });
+  if (now - (p.gwT || 0) < 500) return; p.gwT = now;
+  if (act === 'list') return c.send({ t: 'gw', a: 'list', list: gwList(key), bal: a.gold });
+  if (act === 'new') {
+    const prize = Math.floor(Number(m.prize)), win = Math.floor(Number(m.win)), secs = Math.floor(Number(m.secs)), tier = Math.floor(Number(m.tier) || 0);
+    if (!(prize >= 1 && prize <= 1e12)) return err('prize');
+    if (!(win >= 1 && win <= GW_MAX_WIN) || prize < win) return err('win');
+    if (!(secs >= GW_MIN_S && secs <= GW_MAX_S)) return err('time');
+    if (!(tier >= 0 && tier <= TIERS.length)) return err('tier');
+    const act2 = Object.values(gws);
+    if (act2.length >= GW_MAX_ACTIVE) return err('full');
+    if (act2.some(g => g.hk === key)) return err('mine');
+    const owner = p.role === 'owner';
+    if (!owner) {
+      if (prize > a.gold) return err('poor');
+      if (!xferTake(a, prize)) return err('cap');           // başkalarına coin dağıtmak da günlük aktarım limitine sayılır
+      a.gold -= prize; p.gold = a.gold;
+    }
+    const g = { id: 'g' + now.toString(36) + crypto.randomBytes(2).toString('hex'), hk: key, hostName: a.name, own: owner ? 1 : 0, prize, win, tier, end: now + secs * 1000, ent: [] };
+    gws[g.id] = g; gwSave(); saveUsers();
+    pfSync(p);
+    broadcast({ t: 'gw', a: 'new', g: gwView(g, '') }, p.id);
+    log('giveaway', a.name, prize, 'coin /', win, 'kazanan /', secs + 's / tier', tier);
+    return c.send({ t: 'gw', a: 'list', list: gwList(key), bal: a.gold, made: g.id });
+  }
+  const g = gws[String(m.id || '')];
+  if (!g) return err('none');
+  if (act === 'join') {
+    if (now >= g.end) return err('over');
+    if (g.hk === key) return err('host');
+    if (g.ent.includes(key)) return err('in');
+    if (tierOf(a.wag || 0) < g.tier) return err('rank');
+    g.ent.push(key); gwSave();
+    return c.send({ t: 'gw', a: 'list', list: gwList(key), bal: a.gold });
+  }
+  if (act === 'cancel') {
+    if (g.hk !== key && p.role !== 'owner') return err('perm');
+    delete gws[g.id]; gwSave();
+    if (!g.own) { gwCredit(g.hk, g.prize, { m: 'gwback', n: g.prize }); saveUsers(); }
+    broadcast({ t: 'gw', a: 'gone', id: g.id, host: g.hostName, why: 'cancel' });
+    return;
+  }
+}
+function gwTick() {
+  const now = Date.now();
+  for (const g of Object.values(gws)) {
+    if (now < g.end) continue;
+    delete gws[g.id];
+    const pool = g.ent.filter(k => users[k]), picked = [];
+    while (pool.length && picked.length < g.win) picked.push(pool.splice(crypto.randomInt(0, pool.length), 1)[0]);
+    const each = Math.floor(g.prize / g.win);
+    for (const k of picked) gwCredit(k, each, { m: 'gww', n: each, h: g.hostName });
+    const back = g.prize - each * picked.length;
+    if (!g.own && back > 0) gwCredit(g.hk, back, { m: 'gwback', n: back });
+    gwSave(); saveUsers();
+    broadcast({ t: 'gw', a: 'end', id: g.id, host: g.hostName, each, n: g.ent.length, win: picked.map(k => users[k].name) });
+    log('giveaway bitti', g.hostName, 'kazananlar:', picked.map(k => users[k].name).join(',') || '-', 'x' + each);
+  }
+}
+setInterval(gwTick, 1000);
 
 /* ---------- TİP ve TAKAS ---------- */
 // coin yatırma açık olduğu için oyuncular arası aktarımlar sınırlı: tek tipte ve günlük toplamda üst sınır (coin satışıyla "çekim" yapılmasını zorlaştırır)
