@@ -19,6 +19,8 @@
  *   RESEND_API_KEY   e-posta doğrulama kodlarını göndermek için Resend (resend.com) API anahtarı
  *   MAIL_FROM        gönderen adres, örn: BloodBet <noreply@siten.com>  (Resend'de doğrulanmış alan adı olmalı)
  *                    ikisi de boşsa kodlar e-posta yerine konsola yazılır (sadece yerelde test için!)
+ *   TURN_URLS        ICE_SERVERS yerine kısayol: turn:relay.ornek.com:80,turns:relay.ornek.com:443?transport=tcp  (+ TURN_USER, TURN_PASS)
+ *   CF_TURN_ID / CF_TURN_TOKEN   Cloudflare Realtime TURN anahtarı (ücretsiz 1000 GB/ay); kimlik bilgisini sunucu otomatik üretir
  *   TRUST_PROXY=1    Cloudflare gibi herkese açık bir proxy arkasındaysan X-Forwarded-For kullan
  *                    (aynı makinedeki / özel ağdaki proxy otomatik tanınır)
  */
@@ -55,6 +57,28 @@ const ID_RE = /^[a-z][0-9]{1,3}$/;
 
 let ICE = null;
 try { const j = JSON.parse(process.env.ICE_SERVERS || 'null'); if (Array.isArray(j) && j.length) ICE = j.slice(0, 6); } catch (e) { }
+if (!ICE && process.env.TURN_URLS) {   // kısayol: TURN_URLS (virgülle), TURN_USER, TURN_PASS
+  const urls = process.env.TURN_URLS.split(',').map(x => x.trim()).filter(Boolean).slice(0, 6);
+  if (urls.length) ICE = [{ urls: ['stun:stun.l.google.com:19302'] }, { urls, username: process.env.TURN_USER || '', credential: process.env.TURN_PASS || '' }];
+}
+
+/* ---------- Cloudflare TURN (isteğe bağlı): CF_TURN_ID + CF_TURN_TOKEN ---------- */
+const CF_ID = process.env.CF_TURN_ID || '', CF_TOKEN = process.env.CF_TURN_TOKEN || '';
+const CF_URL = (process.env.CF_TURN_URL || 'https://rtc.live.cloudflare.com').replace(/\/+$/, '');
+async function refreshCfTurn() {       // kısa ömürlü TURN kimlik bilgisi üretir, 3 saatte bir yenilenir
+  try {
+    const r = await fetch(`${CF_URL}/v1/turn/keys/${encodeURIComponent(CF_ID)}/credentials/generate`, {
+      method: 'POST', headers: { Authorization: 'Bearer ' + CF_TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ttl: 86400 }), signal: AbortSignal.timeout(10000)
+    });
+    if (!r.ok) { log('Cloudflare TURN hatası:', r.status, (await r.text()).slice(0, 200)); return; }
+    const j = await r.json();
+    const list = [].concat(j.iceServers || []).filter(x => x && x.urls);
+    if (list.length) { ICE = list.slice(0, 6); log('Cloudflare TURN kimlik bilgisi yenilendi'); }
+    else log('Cloudflare TURN yanıtında iceServers yok');
+  } catch (e) { log('Cloudflare TURN hatası:', e.message); }
+}
+if (CF_ID && CF_TOKEN && require.main === module) { refreshCfTurn(); setInterval(refreshCfTurn, 3 * 3600 * 1000).unref(); }
 
 /* ---------- PVP arena ayarları (istemcideki PCOVER / PSPAWN ile aynı olmalı) ---------- */
 const PVP = { cx: 0, cz: 100, half: 20, hp: 100, dmg: 25, head: 50, cd: 190, range: 70, rad: 0.55, h: 1.85, respawn: 3000, reward: 20, sameVictimMs: 60000 };
@@ -1551,6 +1575,7 @@ if (require.main === module) {
   const start = () => server.listen(PORT, HOST, () => {
     log(`BloodBet sunucusu http://localhost:${PORT} adresinde (WebSocket: /ws)`);
     log(REMOTE ? 'Hesaplar: Upstash veritabanı (kalıcı)' : 'Hesaplar: yerel dosya ' + USERS_FILE + ' (barındırma diski kalıcı değilse güncellemede silinir!)');
+    log((CF_ID && CF_TOKEN) ? 'Sesli sohbet: Cloudflare TURN kullanılacak' : ICE && ICE.some(x => [].concat(x.urls).some(u => /^turns?:/.test(u))) ? 'Sesli sohbet: TURN sunucusu ayarlı' : 'Sesli sohbet: TURN yok (farklı ağlardaki oyuncular birbirini duyamayabilir)');
     log(MAIL_ON ? 'E-posta doğrulama: Resend ile gönderiliyor' : 'UYARI: RESEND_API_KEY / MAIL_FROM yok, doğrulama kodları e-posta yerine bu konsola yazılır (sadece test için!)');
     if (!process.env.OWNER_CODE) log('OWNER_CODE verilmedi, bu oturum için üretildi:', OWNER_CODE);
     if (!process.env.ADMIN_CODE) log('ADMIN_CODE verilmedi, bu oturum için üretildi:', ADMIN_CODE);
