@@ -16,6 +16,9 @@
  *                    verilirse hesaplar ücretsiz Upstash veritabanında saklanır (güncelleme/yeniden başlatmada silinmez)
  *   ICE_SERVERS      sesli sohbet için TURN/STUN listesi (JSON). Örn: [{"urls":"turn:turn.siten.com:3478","username":"u","credential":"p"}]
  *                    boşsa sadece Google STUN kullanılır (çoğu ev ağında yeter; mobil veri / sıkı NAT için TURN gerekir)
+ *   RESEND_API_KEY   e-posta doğrulama kodlarını göndermek için Resend (resend.com) API anahtarı
+ *   MAIL_FROM        gönderen adres, örn: BloodBet <noreply@siten.com>  (Resend'de doğrulanmış alan adı olmalı)
+ *                    ikisi de boşsa kodlar e-posta yerine konsola yazılır (sadece yerelde test için!)
  *   TRUST_PROXY=1    Cloudflare gibi herkese açık bir proxy arkasındaysan X-Forwarded-For kullan
  *                    (aynı makinedeki / özel ağdaki proxy otomatik tanınır)
  */
@@ -342,42 +345,130 @@ function rwMsg(p, m, now) {
 const pubPf = a => ({ gold: a.gold, owned: a.owned, eq: a.eq, wag: a.wag || 0 });
 const loginTries = new Map();   // ip -> zaman damgaları
 const regTries = new Map();
+const mailTries = new Map();    // ip -> e-posta gönderim zamanları
+const mailTo = new Map();       // e-posta -> gönderim zamanları
+const pend = new Map();         // 'reg:e-posta' | 'fp:e-posta' | 'add:hesap' -> bekleyen doğrulama kodu
 
-function newAccount(name, salt, hash) {
-  return { name, salt: salt.toString('base64'), hash: hash.toString('base64'), toks: [], gold: START_GOLD, owned: DEFAULT_OWNED.slice(),
+/* ---------- e-posta doğrulama ---------- */
+const MAIL_KEY = process.env.RESEND_API_KEY || '';
+const MAIL_FROM = process.env.MAIL_FROM || '';
+const MAIL_API = process.env.MAIL_API_URL || 'https://api.resend.com/emails';
+const MAIL_ON = !!(MAIL_KEY && MAIL_FROM);
+const CODE_TTL = 10 * 60000, CODE_TRIES = 5, RESEND_MS = 45000, PW_MIN = 8;
+const EMAIL_RE = /^[^\s@<>()[\]\\,;:"]{1,64}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i;
+function cleanMail(s) {
+  s = typeof s === 'string' ? s.trim().toLowerCase() : '';
+  if (s.length > 254 || !EMAIL_RE.test(s) || s.split('@')[1].split('.').pop().length < 2) return '';
+  return s;
+}
+function mailCanon(e) {          // a.b+x@gmail.com gibi takma adları tek adrese indirger (aynı kutuyla çok hesap açılmasın)
+  let [l, d] = e.split('@');
+  const base = l.split('+')[0]; if (base) l = base;
+  if (d === 'googlemail.com') d = 'gmail.com';
+  if (d === 'gmail.com') l = l.replace(/\./g, '');
+  return l + '@' + d;
+}
+let mailIdx = null;               // kanonik e-posta -> hesap anahtarı (ilk kullanımda users'tan kurulur)
+function mailUser(canon) {
+  if (!mailIdx) { mailIdx = new Map(); for (const k in users) if (users[k].email) mailIdx.set(mailCanon(users[k].email), k); }
+  const k = mailIdx.get(canon);
+  return k && users[k] ? k : null;
+}
+function mailBind(canon, key) { mailUser(canon); mailIdx.set(canon, key); }
+async function sendMail(to, subject, text) {
+  if (!MAIL_ON) { log('[e-posta ayarlı değil, konsola yazıldı]', to, '|', subject); return true; }
+  try {
+    const r = await fetch(MAIL_API, {
+      method: 'POST', headers: { Authorization: 'Bearer ' + MAIL_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: MAIL_FROM, to: [to], subject, text }), signal: AbortSignal.timeout(10000)
+    });
+    if (!r.ok) { log('e-posta gönderilemedi:', r.status, (await r.text()).slice(0, 200)); return false; }
+    return true;
+  } catch (e) { log('e-posta hatası:', e.message); return false; }
+}
+function codeMail(lang, code, why) {
+  const en = lang === 'en';
+  const reason = { reg: en ? 'You are creating a BloodBet account.' : 'BloodBet hesabı oluşturuyorsun.',
+    fp: en ? 'Someone asked to reset the password of your BloodBet account.' : 'BloodBet hesabının şifresini sıfırlama isteği yapıldı.',
+    add: en ? 'You are adding this e-mail address to your BloodBet account.' : 'Bu e-posta adresini BloodBet hesabına ekliyorsun.' }[why];
+  return en
+    ? { s: 'BloodBet verification code: ' + code, t: `Your verification code: ${code}\n\n${reason}\nThe code is valid for 10 minutes. Do not share it with anyone. If this was not you, ignore this e-mail.` }
+    : { s: 'BloodBet doğrulama kodu: ' + code, t: `Doğrulama kodun: ${code}\n\n${reason}\nKod 10 dakika geçerlidir. Kimseyle paylaşma. Bu işlemi sen yapmadıysan bu e-postayı yok sayabilirsin.` };
+}
+// kod üretir ve gönderir; hata kodu ya da null döner
+async function issueCode(c, key, data, to, lang, why) {
+  const now = Date.now(), old = pend.get(key);
+  if (old && now < old.exp && now - old.sent < RESEND_MS) return 'wait';
+  const il = (mailTries.get(c.ip) || []).filter(t => now - t < 3600000);
+  const el = (mailTo.get(to) || []).filter(t => now - t < 3600000);
+  if (il.length >= 8 || el.length >= 5) return 'mailrate';
+  il.push(now); mailTries.set(c.ip, il); el.push(now); mailTo.set(to, el);
+  const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  pend.set(key, Object.assign({ code, exp: now + CODE_TTL, tries: 0, sent: now }, data));
+  const mm = codeMail(lang, code, why);
+  if (!MAIL_ON) log('DOĞRULAMA KODU', to, code);
+  if (!(await sendMail(to, mm.s, mm.t))) { pend.delete(key); return 'mailfail'; }
+  return null;
+}
+function checkCode(key, code) {    // { r: 'ok', p } | { r: 'bad' } | { r: 'exp' }; doğru kod tek kullanımlıktır
+  const p = pend.get(key);
+  if (!p || Date.now() > p.exp || ++p.tries > CODE_TRIES) { pend.delete(key); return { r: 'exp' }; }
+  if (!safeEq(String(code == null ? '' : code).replace(/\D/g, '').slice(0, 6), p.code)) return { r: 'bad' };
+  pend.delete(key);
+  return { r: 'ok', p };
+}
+
+function newAccount(name, salt, hash, email) {
+  return { name, email: email || '', mailOk: !!email, salt: salt.toString('base64'), hash: hash.toString('base64'), toks: [], gold: START_GOLD, owned: DEFAULT_OWNED.slice(),
     eq: { c: 'c1', h: 'h1', o: 'o1', d: 'd1' }, bud: BUD_START, budT: Date.now(), created: Date.now() };
 }
+function authGate(c) {               // IP başına dakikada 12 giriş / kayıt / doğrulama işlemi
+  const now = Date.now(), lt = (loginTries.get(c.ip) || []).filter(t => now - t < 60000);
+  if (lt.length >= 12) return false;
+  lt.push(now); loginTries.set(c.ip, lt);
+  return true;
+}
+const langOf = m => (m.lang === 'en' ? 'en' : 'tr');
+
 function doAuth(c, m) {
   const now = Date.now();
-  const lt = (loginTries.get(c.ip) || []).filter(t => now - t < 60000);
-  if (lt.length >= 12) return c.send({ t: 'autherr', c: 'rate' });
-  lt.push(now); loginTries.set(c.ip, lt);
+  if (!authGate(c)) return c.send({ t: 'autherr', c: 'rate' });
   if (c.authBusy || c.acct) return;
-  const name = cleanText(m.name, 14), key = name.toLowerCase();
-  if (banOf(key)) return c.send({ t: 'autherr', c: 'banned' });
-  const pw = typeof m.pass === 'string' ? m.pass.slice(0, 64) : '';
   const fail = code => c.send({ t: 'autherr', c: code });
-  if (m.t === 'reg') {
+  const idRaw = typeof m.name === 'string' ? m.name.trim().slice(0, 254) : '';
+  const pw = typeof m.pass === 'string' ? m.pass.slice(0, 64) : '';
+  if (m.t === 'reg') {                                   // 1. adım: bilgileri doğrula, e-postaya kod gönder
+    const name = cleanText(idRaw, 14), key = name.toLowerCase(), email = cleanMail(m.email);
+    if (banOf(key)) return fail('banned');
     if (!validName(name)) return fail('name');
-    if (pw.length < 6) return fail('pw');
+    if (!email) return fail('email');
+    if (pw.length < PW_MIN || pw.toLowerCase() === key) return fail('pw');
+    const canon = mailCanon(email);
     if (users[key]) return fail('taken');
+    if (mailUser(canon)) return fail('mailtaken');
     const rt = (regTries.get(c.ip) || []).filter(t => now - t < 3600000);
-    if (rt.length >= 5) return fail('regrate');
+    if (rt.length >= 8) return fail('regrate');
     rt.push(now); regTries.set(c.ip, rt);
     c.authBusy = true;
     const salt = crypto.randomBytes(16);
     crypto.scrypt(pw, salt, 32, (e, k) => {
-      c.authBusy = false;
-      if (e || c.closed) return;
-      if (users[key]) return fail('taken');
-      const a = newAccount(name, salt, k);
-      users[key] = a; saveUsers();
-      log('yeni hesap', name);
-      authOk(c, a, true);
+      if (e || c.closed) { c.authBusy = false; return; }
+      if (users[key] || mailUser(canon)) { c.authBusy = false; return fail(users[key] ? 'taken' : 'mailtaken'); }
+      issueCode(c, 'reg:' + canon, { name, key, email, salt, hash: k }, email, langOf(m), 'reg').then(er => {
+        c.authBusy = false;
+        if (er) return fail(er);
+        c.send({ t: 'authstep', s: 'code', k: 'reg', email });
+      });
     });
     return;
   }
-  const a = users[key];
+  let a, key;
+  if (idRaw.includes('@')) {                             // e-posta ile giriş
+    if (m.t === 'resume') return fail('bad');
+    const em = cleanMail(idRaw), uk = em && mailUser(mailCanon(em));
+    a = uk ? users[uk] : null; key = a ? a.name.toLowerCase() : '';
+  } else { key = cleanText(idRaw, 14).toLowerCase(); a = users[key]; }
+  if (key && banOf(key)) return fail('banned');
   if (m.t === 'resume') {
     const th = tokHash(m.tok || '');
     if (!a || !a.toks.includes(th)) return fail('bad');
@@ -393,6 +484,85 @@ function doAuth(c, m) {
     authOk(c, a, true);
   });
 }
+// 2. adım: e-postaya gelen kodu doğrula, hesabı oluştur
+function doRegVerify(c, m) {
+  if (!authGate(c)) return c.send({ t: 'autherr', c: 'rate' });
+  if (c.authBusy || c.acct) return;
+  const email = cleanMail(m.email);
+  if (!email) return c.send({ t: 'autherr', c: 'email' });
+  const canon = mailCanon(email), r = checkCode('reg:' + canon, m.code);
+  if (r.r === 'exp') return c.send({ t: 'autherr', c: 'codeexp' });
+  if (r.r === 'bad') return c.send({ t: 'authstep', s: 'err', c: 'codebad' });
+  const p = r.p;
+  if (banOf(p.key)) return c.send({ t: 'autherr', c: 'banned' });
+  if (users[p.key]) return c.send({ t: 'autherr', c: 'taken' });
+  if (mailUser(canon)) return c.send({ t: 'autherr', c: 'mailtaken' });
+  const a = newAccount(p.name, p.salt, p.hash, p.email);
+  users[p.key] = a; mailBind(canon, p.key); saveUsers();
+  log('yeni hesap', p.name);
+  authOk(c, a, true);
+}
+// şifremi unuttum: hesap var mı yok mu belli etmeden "kod gönderildi" der
+function doForgot(c, m) {
+  if (!authGate(c)) return c.send({ t: 'autherr', c: 'rate' });
+  if (c.authBusy || c.acct) return;
+  const email = cleanMail(m.email);
+  if (!email) return c.send({ t: 'autherr', c: 'email' });
+  const canon = mailCanon(email), uk = mailUser(canon), a = uk ? users[uk] : null;
+  const ok = () => c.send({ t: 'authstep', s: 'code', k: 'fp', email });
+  if (!a || !a.mailOk || banOf(uk)) return ok();
+  c.authBusy = true;
+  issueCode(c, 'fp:' + canon, { key: uk }, a.email, langOf(m), 'fp').then(er => {
+    c.authBusy = false;
+    if (er === 'wait') return ok();
+    if (er) return c.send({ t: 'autherr', c: er });
+    ok();
+  });
+}
+function doReset(c, m) {
+  if (!authGate(c)) return c.send({ t: 'autherr', c: 'rate' });
+  if (c.authBusy || c.acct) return;
+  const email = cleanMail(m.email), pw = typeof m.pass === 'string' ? m.pass.slice(0, 64) : '';
+  if (!email) return c.send({ t: 'autherr', c: 'email' });
+  if (pw.length < PW_MIN) return c.send({ t: 'authstep', s: 'err', c: 'pw' });   // zayıf şifre kodu yakmasın
+  const canon = mailCanon(email), r = checkCode('fp:' + canon, m.code);
+  if (r.r === 'exp') return c.send({ t: 'autherr', c: 'codeexp' });
+  if (r.r === 'bad') return c.send({ t: 'authstep', s: 'err', c: 'codebad' });
+  const a = users[r.p.key];
+  if (!a || pw.toLowerCase() === a.name.toLowerCase()) return c.send({ t: 'autherr', c: 'bad' });
+  c.authBusy = true;
+  const salt = crypto.randomBytes(16);
+  crypto.scrypt(pw, salt, 32, (e, k) => {
+    c.authBusy = false;
+    if (e) return c.send({ t: 'autherr', c: 'bad' });
+    a.salt = salt.toString('base64'); a.hash = k.toString('base64'); a.toks = [];   // eski oturumlar kapanır
+    saveUsers(true);
+    log('şifre sıfırlandı', a.name);
+    if (!c.closed) authOk(c, a, true);
+  });
+}
+// e-postası olmayan eski hesaplar için: giriş yaptıktan sonra e-posta ekleme
+function doMail(c, m) {
+  const a = c.acct;
+  if (!a || a.mailOk) return;
+  const err = code => c.send({ t: 'mail', a: 'err', c: code }), key = 'add:' + a.name.toLowerCase();
+  if (!authGate(c)) return err('rate');
+  if (m.a === 'send') {
+    const email = cleanMail(m.email);
+    if (!email) return err('email');
+    const canon = mailCanon(email);
+    if (mailUser(canon)) return err('mailtaken');
+    issueCode(c, key, { canon, email }, email, langOf(m), 'add').then(er => er ? err(er) : c.send({ t: 'mail', a: 'sent', email }));
+  } else if (m.a === 'verify') {
+    const r = checkCode(key, m.code);
+    if (r.r === 'exp') return err('codeexp');
+    if (r.r === 'bad') return err('codebad');
+    if (mailUser(r.p.canon)) return err('mailtaken');
+    a.email = r.p.email; a.mailOk = true; mailBind(r.p.canon, a.name.toLowerCase()); saveUsers(true);
+    log('e-posta eklendi', a.name);
+    c.send({ t: 'mail', a: 'ok' });
+  }
+}
 function authOk(c, a, mint, tok) {
   let online = null;
   for (const q of players.values()) if (q.acct === a) online = q;
@@ -407,7 +577,7 @@ function authOk(c, a, mint, tok) {
     online.conn.send({ t: 'err', c: 'dup' });
     online.conn.close(1000);
   }
-  c.send({ t: 'authok', name: a.name, tok, pf: pubPf(a) });
+  c.send({ t: 'authok', name: a.name, tok, pf: pubPf(a), nomail: a.mailOk ? 0 : 1 });
 }
 // istemcinin bildirdiği altın / eşya durumunu doğrular; hileli artışı reddeder
 function applyPf(p, m, now) {
@@ -488,6 +658,10 @@ function onMsg(c, txt) {
   if (!m || typeof m !== 'object' || typeof m.t !== 'string') return;
   if (!c.p) {
     if (m.t === 'reg' || m.t === 'login' || m.t === 'resume') doAuth(c, m);
+    else if (m.t === 'regv') doRegVerify(c, m);
+    else if (m.t === 'forgot') doForgot(c, m);
+    else if (m.t === 'reset') doReset(c, m);
+    else if (m.t === 'mail') doMail(c, m);
     else if (m.t === 'join') doJoin(c, m);
     return;
   }
@@ -1366,6 +1540,8 @@ setInterval(() => {
     else c.ping();
   }
   for (const mp of [loginTries, regTries]) for (const [ip, l] of mp) { const f = l.filter(t => now - t < 3600000); if (f.length) mp.set(ip, f); else mp.delete(ip); }
+  for (const [k, p] of pend) if (now > p.exp) pend.delete(k);
+  for (const mp of [mailTries, mailTo]) for (const [k, l] of mp) { const f = l.filter(t => now - t < 3600000); if (f.length) mp.set(k, f); else mp.delete(k); }
   for (const [ip, l] of authTries) { const f = l.filter(t => now - t < 60000); if (f.length) authTries.set(ip, f); else authTries.delete(ip); }
 }, 15000).unref();
 
@@ -1375,6 +1551,7 @@ if (require.main === module) {
   const start = () => server.listen(PORT, HOST, () => {
     log(`BloodBet sunucusu http://localhost:${PORT} adresinde (WebSocket: /ws)`);
     log(REMOTE ? 'Hesaplar: Upstash veritabanı (kalıcı)' : 'Hesaplar: yerel dosya ' + USERS_FILE + ' (barındırma diski kalıcı değilse güncellemede silinir!)');
+    log(MAIL_ON ? 'E-posta doğrulama: Resend ile gönderiliyor' : 'UYARI: RESEND_API_KEY / MAIL_FROM yok, doğrulama kodları e-posta yerine bu konsola yazılır (sadece test için!)');
     if (!process.env.OWNER_CODE) log('OWNER_CODE verilmedi, bu oturum için üretildi:', OWNER_CODE);
     if (!process.env.ADMIN_CODE) log('ADMIN_CODE verilmedi, bu oturum için üretildi:', ADMIN_CODE);
     if (!ALLOWED.length) log('Uyarı: ALLOWED_ORIGINS boş, her siteden bağlanılabilir.');
