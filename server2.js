@@ -1033,7 +1033,7 @@ function gwSave() {
   try { const tmp = GW_FILE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(gws)); fs.renameSync(tmp, GW_FILE); } catch (e) { log('giveaway kayıt hatası:', e.message); }
 }
 async function loadGwRemote() { const r = await redis(['GET', 'bloodbet:gws']); if (r) { try { Object.assign(gws, JSON.parse(r)); } catch (e) { } } }
-const gwView = (g, key) => ({ id: g.id, host: g.hostName, prize: g.prize, win: g.win, tier: g.tier, left: Math.max(0, g.end - Date.now()), n: g.ent.length, me: key && g.ent.includes(key) ? 1 : 0, mine: key === g.hk ? 1 : 0, own: g.own ? 1 : 0 });
+const gwView = (g, key) => ({ id: g.id, host: g.hostName, prize: g.prize, win: g.win, tier: g.tier, left: Math.max(0, g.end - Date.now()), tot: Math.max(1, g.end - (g.at || g.end)), n: g.ent.length, me: key && g.ent.includes(key) ? 1 : 0, mine: key === g.hk ? 1 : 0, own: g.own ? 1 : 0 });
 const gwList = key => Object.values(gws).sort((x, y) => x.end - y.end).map(g => gwView(g, key));
 function gwCredit(key, n, msg) {
   const a = users[key]; if (!a || !(n > 0)) return;
@@ -1060,7 +1060,7 @@ function gwMsg(p, m, now) {
       if (!xferTake(a, prize)) return err('cap');           // başkalarına coin dağıtmak da günlük aktarım limitine sayılır
       a.gold -= prize; p.gold = a.gold;
     }
-    const g = { id: 'g' + now.toString(36) + crypto.randomBytes(2).toString('hex'), hk: key, hostName: a.name, own: owner ? 1 : 0, prize, win, tier, end: now + secs * 1000, ent: [] };
+    const g = { id: 'g' + now.toString(36) + crypto.randomBytes(2).toString('hex'), hk: key, hostName: a.name, own: owner ? 1 : 0, prize, win, tier, at: now, end: now + secs * 1000, ent: [] };
     gws[g.id] = g; gwSave(); saveUsers();
     pfSync(p);
     broadcast({ t: 'gw', a: 'new', g: gwView(g, '') }, p.id);
