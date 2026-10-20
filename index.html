@@ -242,6 +242,33 @@ input[type=text]:focus,input[type=password]:focus{border-color:var(--red);box-sh
 .gwform{display:block}.gwq{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.gwq .tiny{margin:0;white-space:nowrap}.gwprz input{margin:0;height:auto;line-height:1.2}.gwlbl{font:700 12px var(--fd);letter-spacing:1.2px;text-transform:uppercase;color:var(--gold);margin:14px 0 6px}.gwprz{display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.4);border:1px solid var(--line);border-radius:12px;padding:6px 12px}.gwprz input{border:0;background:none;font:800 26px var(--fd);width:100%;padding:6px 0;outline:none;color:var(--text)}
 .gwpv{margin:14px 0 4px;padding:10px 12px;border-radius:10px;background:rgba(255,211,107,.1);border:1px solid rgba(255,211,107,.3);font:700 14px var(--fd);color:var(--gold)}.gwstep{display:flex;align-items:center;gap:14px}.gwstep b{font:800 24px var(--fd);min-width:32px;text-align:center}.gwq .mini.on{border-color:var(--gold2);background:rgba(255,211,107,.18);color:var(--gold)}
 .lnk{display:block;width:100%;background:none;border:0;color:var(--mute);text-decoration:underline;cursor:pointer;font:inherit;font-size:13px;margin-top:12px;padding:0;text-align:center}.lnk:hover{color:var(--text)}#start .tabs{margin-top:6px}#vcode,#mcode{letter-spacing:6px;text-align:center;font-size:20px}
+body.mob{overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none}
+body.mob input,body.mob textarea{-webkit-user-select:text;user-select:text}
+#mctl{position:fixed;inset:0;z-index:4;pointer-events:none;display:none;touch-action:none}
+#mctl .mlook{position:absolute;inset:0;pointer-events:auto;touch-action:none}
+#mctl .mjoy{position:absolute;left:0;bottom:0;width:46%;height:62%;pointer-events:auto;touch-action:none}
+#mctl .mjoy::before{content:"";position:absolute;left:calc(env(safe-area-inset-left,0px) + 84px);bottom:calc(env(safe-area-inset-bottom,0px) + 84px);width:108px;height:108px;border-radius:50%;border:2px solid rgba(255,255,255,.22);background:rgba(255,255,255,.05);transform:translate(-50%,50%)}
+#mctl .mjoy.on::before{display:none}
+#mctl .mjb{position:absolute;width:108px;height:108px;margin:-54px 0 0 -54px;border-radius:50%;border:2px solid rgba(255,255,255,.35);background:rgba(255,255,255,.08);display:none}
+#mctl .mjk{position:absolute;width:50px;height:50px;margin:-25px 0 0 -25px;border-radius:50%;background:rgba(255,255,255,.4);border:2px solid rgba(255,255,255,.6);display:none}
+#mctl .mjoy.on .mjb,#mctl .mjoy.on .mjk{display:block}
+.mbtn{position:absolute;pointer-events:auto;touch-action:none;display:flex;align-items:center;justify-content:center;border-radius:50%;border:2px solid rgba(255,255,255,.35);background:rgba(20,10,14,.55);color:#fff;font:700 18px var(--fd,sans-serif);padding:0;-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.mbtn.on{background:rgba(255,255,255,.35);transform:scale(.94)}
+.mbtn.act{border-color:#9fe39f;background:rgba(40,120,60,.55)}
+.mbtn.big{width:74px;height:74px;font-size:26px}.mbtn.mid{width:58px;height:58px}.mbtn.sm{width:42px;height:42px;font-size:17px}
+.mbtn.jump{right:calc(env(safe-area-inset-right,0px) + 18px);bottom:calc(env(safe-area-inset-bottom,0px) + 22px)}
+.mbtn.use{right:calc(env(safe-area-inset-right,0px) + 102px);bottom:calc(env(safe-area-inset-bottom,0px) + 30px)}
+.mbtn.fire{right:calc(env(safe-area-inset-right,0px) + 34px);bottom:calc(env(safe-area-inset-bottom,0px) + 106px);background:rgba(160,20,40,.6)}
+.mbtn.mic{right:calc(env(safe-area-inset-right,0px) + 112px);bottom:calc(env(safe-area-inset-bottom,0px) + 98px)}
+.mbtn.ctx.c1{right:calc(env(safe-area-inset-right,0px) + 176px);bottom:calc(env(safe-area-inset-bottom,0px) + 30px)}
+.mbtn.ctx.c2{right:calc(env(safe-area-inset-right,0px) + 176px);bottom:calc(env(safe-area-inset-bottom,0px) + 98px)}
+.mbtn.top{top:calc(env(safe-area-inset-top,0px) + 8px)}
+.mbtn.t1{right:calc(env(safe-area-inset-right,0px) + 8px)}.mbtn.t2{right:calc(env(safe-area-inset-right,0px) + 56px)}.mbtn.t3{right:calc(env(safe-area-inset-right,0px) + 104px)}
+.mbtn.t4{right:calc(env(safe-area-inset-right,0px) + 152px)}.mbtn.t5{right:calc(env(safe-area-inset-right,0px) + 200px)}.mbtn.t6{right:calc(env(safe-area-inset-right,0px) + 248px)}.mbtn.t7{right:calc(env(safe-area-inset-right,0px) + 296px)}
+body.mob.mtyping #chat{bottom:auto;top:calc(env(safe-area-inset-top,0px) + 8px)}
+body.mob #chat{width:min(300px,42vw);bottom:calc(env(safe-area-inset-bottom,0px) + 170px)}
+#mrot{display:none;position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 56px);transform:translateX(-50%);z-index:7;background:rgba(14,7,10,.9);border:1px solid var(--line,#444);border-radius:10px;padding:8px 14px;font:600 13px var(--fd,sans-serif);color:#fff;text-align:center;max-width:86vw;pointer-events:none}
+@media (orientation:portrait){body.mob.mshow #mrot{display:block}}
 </style>
 </head>
 <body>
@@ -380,6 +407,7 @@ Object.assign(LG.tr,{dp_btn:'Coin satın al',rng_no:'Hedef poligonunu bugün zat
 Object.assign(LG.en,{dp_btn:'Buy coins',rng_no:'You already played the target range today. Resets in: {t}',rng_bad:'Score could not be verified.',dp_none2:'No response from the server. Make sure server2.js is up to date.',dp_retry:'Retry',rw_btn:'Rewards',gw_box:'Surprise box',gw_tab1:'Giveaways',gw_tab2:'Create',gw_dur:'Duration',gw_min:'minutes',gw_pv:'Per winner: {e} coins · Total: {p} coins',gw_official:'Official',gw_player:'Player',gw_press:'[E] Giveaway',gw_active:'{n} active giveaway(s)',gw_t:'Surprise box · Giveaway',gw_info:'Join giveaways for free. Winners are picked at random when time is up. You can host one too, with any amount of coins, duration and rank limit.',gw_off:'You must be connected to the multiplayer server for giveaways.',gw_list:'Active giveaways',gw_none:'No active giveaways right now.',gw_start:'Start a giveaway',gw_prize:'Total prize (coins)',gw_winners:'Winners',gw_mins:'Duration (minutes)',gw_minrank:'Minimum rank',gw_all:'Everyone',gw_tmin:'Tier {n}+',gw_ent:'Entrants',gw_join:'Join',gw_in:'Joined ✓',gw_yours:'Your giveaway',gw_needs:'Tier {n} required',gw_free:'As owner, prize coins are free.',gw_cost:'Prize coins are taken from your balance; unclaimed or leftover coins are refunded. Counts toward the daily transfer limit.',gw_make:'Start',gw_new:'{h} started a giveaway: {p} coins, {w} winner(s)! Go to the surprise box in the lobby.',gw_gone:'{h} cancelled their giveaway.',gw_end:'{h} giveaway winners: {n} ({c} coins each)',gw_end0:'Nobody entered {h}\'s giveaway.',gw_won:'You won a giveaway! +{c} coins ({h})',gw_back:'Giveaway refund: +{c} coins',gw_e_prize:'Invalid prize amount.',gw_e_win:'Winners must be 1-50 and the prize cannot be less than the winner count.',gw_e_time:'Duration must be between 1 minute and 7 days.',gw_e_tier:'Invalid rank value.',gw_e_full:'At most 8 giveaways can run at once.',gw_e_mine:'You already have an active giveaway.',gw_e_poor:'Not enough balance.',gw_e_cap:'You reached the daily coin transfer limit.',gw_e_none:'Giveaway not found.',gw_e_over:'Time is up.',gw_e_host:'You cannot join your own giveaway.',gw_e_in:'You already joined.',gw_e_rank:'Your rank is too low.',gw_e_perm:'No permission.',rw_t:'Rewards',rw_rb:'Rakeback',rw_wk:'Weekly bonus',rw_mo:'Monthly bonus',rw_af:'Affiliate',rw_off:'You must be connected to the multiplayer server to use rewards.',rw_unc:'Unclaimed rakeback',rw_rbd:'Earned on every wager you place, as a share of the house edge. Your rate rises with your wager rank.',rw_rate:'Rate by wager rank',rw_min:'Minimum claim is 1 coin.',rw_claim:'Claim',rw_wkd:'The weekly bonus renews every Monday at 06:00 (Turkey time). A share of what you wagered since your last claim is returned; the rate grows with your tier.',rw_mod:'The monthly bonus renews on the 1st of every month. A share of what you wagered since your last claim is returned; the rate grows with your tier.',rw_wsince:'wagered since last claim',rw_next:'next claim',rw_ready:'Ready',rw_tierb:'Tier {n} bonus applied.',rw_afd:'When friends sign up with your code and buy coins, {p}% of the coins they get is credited to you as a bonus.',rw_inv:'invited',rw_earn:'coins earned',rw_by:'Invited by: {n}',rw_enter:'Enter the code of the person who invited you (before your first purchase):',rw_use:'Use code',rw_got:'{k} claimed: +{c} coins!',rw_aff:'You got +{c} coins affiliate bonus thanks to {n}!',rw_k_rb:'Rakeback',rw_k_wk:'Weekly bonus',rw_k_mo:'Monthly bonus',rw_e_min:'Not enough to claim yet.',rw_e_wait:'Not available yet.',rw_e_none:'No such user.',rw_e_self:'You cannot use your own code.',rw_e_has:'You already entered a code.',rw_e_late:'The code can no longer be entered.',wb_tier:'TIER {n}',wb_t0:'ROOKIE',wb_max:'MAX',wb_up:'You reached Tier {n}!',dp_sup:'For payment and deposit request issues, Discord: rowdyy16',dp_t:'Buy coins',dp_warn:'$1 = 100 coins. A 2% fee is taken from every deposit. Payments are checked by hand, approval can take a while. Coins are for in-game use only.',dp_off:'You must be connected to the multiplayer server to buy coins.',dp_pick:'1) Pick a crypto',dp_amt:'2) Amount (USD)',dp_get:'You will receive: {c} coins (fee: {f} coins)',dp_age:'I am over 18.',dp_make:'Create request',dp_min:'Limits: ${a} - ${b}',dp_none:'No requests yet.',dp_list:'Your requests',dp_send:'Send exactly ${u} worth of {k} (network: {n}). Payments on another network may be lost.',dp_tx:'Transaction ID (TXID)',dp_paid:'I have paid',dp_cx:'Cancel',dp_copy:'Copy',dp_copied:'Copied',dp_wait:'Your payment is being checked; coins arrive once approved.',dp_ok:'Deposit approved: +{c} coins!',dp_code:'Request code',dp_notx:'(payment not reported yet)',dp_new:'{n} sent a new deposit request.',dp_pend:'Pending deposits',dp_nopend:'No pending deposits.',dp_yes:'Approve',dp_no:'Reject',dp_s_open:'awaiting payment',dp_s_paid:'checking',dp_s_ok:'credited',dp_s_no:'rejected',dp_s_cx:'cancelled',dp_e_age:'Tick the box to continue.',dp_e_coin:'This crypto is not available right now.',dp_e_amt:'Amount is outside the allowed range.',dp_e_many:'You can have at most 3 open requests.',dp_e_day:'Daily deposit limit reached.',dp_e_none:'Request not found.',dp_e_state:'This action is not possible for this request.',dp_e_txid:'The transaction ID looks invalid.',dp_e_dup:'This transaction ID was already used.',dp_e_perm:'No permission.',xfcap:'You can send at most {g} per transfer and {d} coins per day.'});
 Object.assign(LG.tr,{ac_id:'Kullanıcı adı veya e-posta',ac_mail:'E-posta adresin',ac_pass2:'Şifre (tekrar)',ac_newpass:'Yeni şifre',ac_regsend:'Doğrulama kodu gönder',ac_forgot:'Şifremi unuttum',ac_back:'← Geri',ac_code:'6 haneli kod',ac_verify:'Doğrula ve hesabı oluştur',ac_resend:'Kodu tekrar gönder',ac_reset:'Şifreyi değiştir',ac_fpsend:'Kod gönder',ac_fpinfo:'Hesabına bağlı e-posta adresini yaz, sana bir doğrulama kodu gönderelim.',ac_codeinfo:'{e} adresine 6 haneli bir kod gönderdik (10 dakika geçerli). Gelmediyse spam klasörüne bak.',ac_fpcode:'{e} ile kayıtlı bir hesap varsa kod gönderdik. Kodu ve yeni şifreni yaz.',ac_mailask:'E-postanı ekle',ac_mailwhy:'Hesabın e-postaya bağlı değil. Şifreni unutursan hesabını geri almanın tek yolu bu. Kodla doğrulayacağız.',ac_skip:'Şimdilik geç',ac_email:'Geçerli bir e-posta adresi yaz.',ac_mailtaken:'Bu e-posta ile zaten bir hesap var.',ac_banned:'Bu hesap yasaklı.',ac_codeexp:'Kodun süresi doldu ya da çok fazla yanlış denedin. Yeni kod iste.',ac_codebad:'Kod yanlış.',ac_wait:'Yeni kod için birkaç saniye bekle.',ac_mailrate:'Çok fazla kod istendi, daha sonra tekrar dene.',ac_mailfail:'E-posta gönderilemedi, biraz sonra tekrar dene.',ac_pw:'Şifre en az 8 karakter olmalı ve kullanıcı adınla aynı olmamalı.',ac_pw2:'Şifreler aynı değil.'});Object.assign(LG.en,{ac_id:'Username or e-mail',ac_mail:'Your e-mail address',ac_pass2:'Password (repeat)',ac_newpass:'New password',ac_regsend:'Send verification code',ac_forgot:'Forgot password',ac_back:'← Back',ac_code:'6-digit code',ac_verify:'Verify and create account',ac_resend:'Resend code',ac_reset:'Change password',ac_fpsend:'Send code',ac_fpinfo:'Enter the e-mail address linked to your account and we will send you a verification code.',ac_codeinfo:'We sent a 6-digit code to {e} (valid for 10 minutes). Check your spam folder if it does not arrive.',ac_fpcode:'If an account is registered with {e}, we sent a code. Enter it with your new password.',ac_mailask:'Add your e-mail',ac_mailwhy:'Your account has no e-mail yet. It is the only way to recover the account if you forget your password. We will verify it with a code.',ac_skip:'Skip for now',ac_email:'Enter a valid e-mail address.',ac_mailtaken:'An account with this e-mail already exists.',ac_banned:'This account is banned.',ac_codeexp:'The code expired or you tried too many times. Request a new one.',ac_codebad:'Wrong code.',ac_wait:'Wait a few seconds before requesting a new code.',ac_mailrate:'Too many codes requested, try again later.',ac_mailfail:'Could not send the e-mail, try again shortly.',ac_pw:'Password must be at least 8 characters and different from your username.',ac_pw2:'Passwords do not match.'});
 Object.assign(LG.tr,{vc_fail:'Sesli sohbet bağlantısı kurulamadı. Ağın doğrudan bağlantıya izin vermiyor olabilir (sunucuya TURN eklenmesi gerekebilir).'});Object.assign(LG.en,{vc_fail:'Voice chat could not connect. Your network may block direct connections (the server may need a TURN server).'});
+Object.assign(LG.tr,{m_rot:'Daha rahat oynamak için telefonu yatay çevir'});Object.assign(LG.en,{m_rot:'Rotate your phone to landscape for a better experience'});
 Object.assign(LG.tr,{ac_aff:'Affiliate kodu (isteğe bağlı)',ac_affbad:'Bu affiliate kodu bulunamadı. Boş bırakabilirsin.',rw_afd2:'Davet ettiğin oyuncular bahis oynadıkça, bahislerinin kasa payının %{w}\'ü sana birikir ve buradan talep edebilirsin. Ayrıca satın aldıkları coinin %{p}\'i anında hesabına eklenir. Arkadaşların kayıt olurken kodunu yazmalı.',rw_aflink:'Davet linkini kopyala',rw_afw:'Toplam bahis',rw_afpend:'Talep edilebilir',rw_aflist:'Davet ettiklerin',rw_afn:'Oyuncu',rw_afc:'Sana kazandırdığı',rw_k_af:'Affiliate'});Object.assign(LG.en,{ac_aff:'Affiliate code (optional)',ac_affbad:'This affiliate code was not found. You can leave it empty.',rw_afd2:'As players you invite place bets, {w}% of the house edge on their bets builds up for you and can be claimed here. You also instantly get {p}% of the coins they buy. Friends must enter your code when they sign up.',rw_aflink:'Copy invite link',rw_afw:'Total wagered',rw_afpend:'Claimable',rw_aflist:'Your invited players',rw_afn:'Player',rw_afc:'Earned for you',rw_k_af:'Affiliate'});
 function L(k,a){var d=LG[cfg.lang]||LG.tr,x=d[k];if(x===undefined)x=LG.tr[k];if(x===undefined)return k;if(typeof x!=='string')return x;if(a)for(var q in a)x=x.split('{'+q+'}').join(a[q]);return x}
 function PS(v){return Math.round(v*1.5/10)*10}
@@ -1855,6 +1883,81 @@ addEventListener('keydown',function(e){
 addEventListener('keyup',function(e){key[e.code]=false;if(e.code==='Tab')sbShow(false);if(go&&e.code===cfg.binds.mic&&cfg.pttMode==='ptt')setMic(false)});
 inp.addEventListener('focus',function(){typing=true;key={}});inp.addEventListener('blur',function(){typing=false});
 addEventListener('mousemove',function(e){if(!go||paused||typing)return;if(!lockOn()&&!drag)return;var mx=e.movementX||0,my=e.movementY||0;if(Math.abs(mx)>220||Math.abs(my)>220)return;var k=.0025*cfg.sens;P.yaw-=mx*k;P.pitch=Math.max(-1.3,Math.min(1.3,P.pitch-my*k))});
+/* ---------- Mobil dokunmatik kontroller (telefon/tablet) ---------- */
+(function(){
+ var q=new URLSearchParams(location.search).get('touch');   // ?touch=1 zorla aç, ?touch=0 kapat
+ var MOB=q==='1'||(q!=='0'&&matchMedia('(hover:none) and (pointer:coarse)').matches);
+ if(!MOB)return;
+ try{
+ var B=document.body;B.classList.add('mob');
+ var vp=document.querySelector('meta[name=viewport]');if(vp)vp.content='width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
+ fallback=true;lock=function(){fallback=true;setPaused(false)};   // telefonlarda pointer lock yok: sürükleyerek bakış modu
+ function mk(c,t){var e=document.createElement('div');if(c)e.className=c;if(t!=null)e.textContent=t;return e}
+ function kd(code,k){window.dispatchEvent(new KeyboardEvent('keydown',{code:code,key:k||'',bubbles:true,cancelable:true}))}
+ function ku(code,k){window.dispatchEvent(new KeyboardEvent('keyup',{code:code,key:k||'',bubbles:true,cancelable:true}))}
+ function tap(code,k){kd(code,k);ku(code,k)}
+ var root=mk(''),look=mk('mlook'),joy=mk('mjoy'),base=mk('mjb'),knob=mk('mjk');root.id='mctl';
+ joy.appendChild(base);joy.appendChild(knob);root.appendChild(look);root.appendChild(joy);
+ /* --- bakış: ekranın boş yerinde sürükle --- */
+ var lid=null,lx=0,ly=0;
+ look.addEventListener('pointerdown',function(e){if(lid!==null)return;lid=e.pointerId;lx=e.clientX;ly=e.clientY;try{look.setPointerCapture(e.pointerId)}catch(x){}e.preventDefault()});
+ look.addEventListener('pointermove',function(e){if(e.pointerId!==lid)return;var mx=e.clientX-lx,my=e.clientY-ly;lx=e.clientX;ly=e.clientY;
+  if(!go||paused||typing||modal)return;if(Math.abs(mx)>160||Math.abs(my)>160)return;var k=.0048*cfg.sens;P.yaw-=mx*k;P.pitch=Math.max(-1.3,Math.min(1.3,P.pitch-my*k));e.preventDefault()});
+ var lend=function(e){if(e.pointerId===lid)lid=null};look.addEventListener('pointerup',lend);look.addEventListener('pointercancel',lend);
+ /* --- hareket: sol altta yüzen joystick --- */
+ var jid=null,cx=0,cy=0,JR=54,act={fwd:0,back:0,left:0,right:0,run:0};
+ function joyKeys(w){for(var n in w){var on=!!w[n];if(!!act[n]!==on){act[n]=on;if(on)kd(cfg.binds[n]);else ku(cfg.binds[n])}}}
+ function joyOff(){jid=null;joyKeys({fwd:0,back:0,left:0,right:0,run:0});joy.classList.remove('on');base.style.left='';base.style.top='';knob.style.left='';knob.style.top=''}
+ function joyMove(e){var dx=e.clientX-cx,dy=e.clientY-cy,len=Math.hypot(dx,dy),lim=Math.min(len,JR),ux=len?dx/len:0,uy=len?dy/len:0;
+  knob.style.left=(cx+ux*lim)+'px';knob.style.top=(cy+uy*lim)+'px';
+  if(len<12){joyKeys({fwd:0,back:0,left:0,right:0,run:0});return}
+  joyKeys({fwd:uy<-.38,back:uy>.38,left:ux<-.38,right:ux>.38,run:len>JR*1.05})}
+ joy.addEventListener('pointerdown',function(e){if(jid!==null)return;jid=e.pointerId;var r=joy.getBoundingClientRect();
+  cx=Math.max(JR+8,Math.min(r.width-JR-8,e.clientX-r.left));cy=Math.max(JR+8,Math.min(r.height-JR-8,e.clientY-r.top));
+  base.style.left=cx+'px';base.style.top=cy+'px';joy.classList.add('on');try{joy.setPointerCapture(e.pointerId)}catch(x){}e.preventDefault();joyMove({clientX:e.clientX-r.left,clientY:e.clientY-r.top})});
+ joy.addEventListener('pointermove',function(e){if(e.pointerId!==jid)return;var r=joy.getBoundingClientRect();joyMove({clientX:e.clientX-r.left,clientY:e.clientY-r.top});e.preventDefault()});
+ var jend=function(e){if(e.pointerId===jid)joyOff()};joy.addEventListener('pointerup',jend);joy.addEventListener('pointercancel',jend);
+ /* --- düğmeler --- */
+ function btn(c,label,down,up){var b=document.createElement('button');b.type='button';b.className='mbtn '+c;b.textContent=label;
+  b.addEventListener('pointerdown',function(e){e.preventDefault();e.stopPropagation();try{b.setPointerCapture(e.pointerId)}catch(x){}b.classList.add('on');if(down)down()});
+  var end=function(e){if(!b.classList.contains('on'))return;if(e&&e.preventDefault)e.preventDefault();b.classList.remove('on');if(up)up()};
+  b.addEventListener('pointerup',end);b.addEventListener('pointercancel',end);b.addEventListener('lostpointercapture',end);
+  b.addEventListener('contextmenu',function(e){e.preventDefault()});root.appendChild(b);return b}
+ var bind=function(n){return cfg.binds[n]};
+ var bJump=btn('big jump','⇧',function(){kd(bind('jump'),' ')},function(){ku(bind('jump'),' ')});
+ var bUse=btn('mid use','E',function(){tap('KeyE','e')});
+ var bFire=btn('big fire','◎',function(){window.dispatchEvent(new MouseEvent('mousedown',{button:0,bubbles:true}))},function(){window.dispatchEvent(new MouseEvent('mouseup',{button:0,bubbles:true}))});
+ var bMic=btn('mid mic','🎤',function(){kd(bind('mic'),'x')},function(){ku(bind('mic'),'x')});
+ var bF=btn('mid ctx c1','F',function(){tap(bind('wheel'),'f')});
+ var bR=btn('mid ctx c1','R',function(){tap('KeyR','r')});
+ var bQ=btn('mid ctx c2','👁',function(){tap('KeyQ','q')});
+ var bY=btn('mid ctx c1','✓',function(){tap('KeyY','y')});
+ var bN=btn('mid ctx c2','✕',function(){tap('KeyN','n')});
+ var bMenu=btn('sm top t1','☰',function(){setPaused(true)});
+ btn('sm top t2','👥',function(){tap(bind('players'))});
+ btn('sm top t3','💬',function(){tap(bind('chat'),'t')});
+ btn('sm top t4','🛒',function(){tap(bind('shop'),'b')});
+ btn('sm top t5','💃',function(){tap(bind('dance'),'g')});
+ btn('sm top t6','📷',function(){tap(bind('cam'),'v')});
+ var de=document.documentElement;
+ if(de.requestFullscreen)btn('sm top t7','⛶',function(){try{if(document.fullscreenElement)document.exitFullscreen();else{var r=de.requestFullscreen();if(r&&r.then)r.then(function(){try{screen.orientation.lock('landscape').catch(function(){})}catch(x){}}).catch(function(){})}}catch(x){}});
+ var rot=mk('','');rot.id='mrot';B.appendChild(rot);
+ B.appendChild(root);
+ function upd(){
+  var show=!!go&&!paused&&!modal&&!typing;
+  root.style.display=show?'block':'none';B.classList.toggle('mtyping',!!typing);B.classList.toggle('mshow',show);
+  rot.textContent=L('m_rot');
+  if(!show){if(jid!==null)joyOff();lid=null;return}
+  bFire.style.display=(mode==='range'||mode==='pvp')?'flex':'none';
+  bR.style.display=(mode==='range'&&!roundOn)?'flex':'none';
+  bF.style.display=nearWheel?'flex':'none';
+  bQ.style.display=(mode==='casino'&&typeof nearTab!=='undefined'&&nearTab>=0)?'flex':'none';
+  var tr=!!trReq;bY.style.display=bN.style.display=tr?'flex':'none';
+  bMic.classList.toggle('act',typeof micOn!=='undefined'&&!!micOn)}
+ setInterval(upd,150);upd();
+ }catch(err){try{console.log('[mobil]',err)}catch(x){}}
+})();
+
 setInterval(function(){if(go&&!paused){pf.gold+=1;savePf()}},30000);
 
 var lt=0,stepT=0;
