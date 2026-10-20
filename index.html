@@ -246,7 +246,7 @@ body.mob{overscroll-behavior:none;-webkit-user-select:none;user-select:none;-web
 body.mob input,body.mob textarea{-webkit-user-select:text;user-select:text}
 #mctl{position:fixed;inset:0;z-index:4;pointer-events:none;display:none;touch-action:none}
 #mctl .mlook{position:absolute;inset:0;pointer-events:auto;touch-action:none}
-#mctl .mjoy{position:absolute;left:0;bottom:0;width:46%;height:62%;pointer-events:auto;touch-action:none}
+#mctl .mjoy{position:absolute;left:0;bottom:0;width:min(32%,260px);min-width:160px;height:min(46%,170px);min-height:150px;pointer-events:auto;touch-action:none}
 #mctl .mjoy::before{content:"";position:absolute;left:calc(env(safe-area-inset-left,0px) + 84px);bottom:calc(env(safe-area-inset-bottom,0px) + 84px);width:108px;height:108px;border-radius:50%;border:2px solid rgba(255,255,255,.22);background:rgba(255,255,255,.05);transform:translate(-50%,50%)}
 #mctl .mjoy.on::before{display:none}
 #mctl .mjb{position:absolute;width:108px;height:108px;margin:-54px 0 0 -54px;border-radius:50%;border:2px solid rgba(255,255,255,.35);background:rgba(255,255,255,.08);display:none}
@@ -266,7 +266,9 @@ body.mob input,body.mob textarea{-webkit-user-select:text;user-select:text}
 .mbtn.t1{right:calc(env(safe-area-inset-right,0px) + 8px)}.mbtn.t2{right:calc(env(safe-area-inset-right,0px) + 56px)}.mbtn.t3{right:calc(env(safe-area-inset-right,0px) + 104px)}
 .mbtn.t4{right:calc(env(safe-area-inset-right,0px) + 152px)}.mbtn.t5{right:calc(env(safe-area-inset-right,0px) + 200px)}.mbtn.t6{right:calc(env(safe-area-inset-right,0px) + 248px)}.mbtn.t7{right:calc(env(safe-area-inset-right,0px) + 296px)}
 body.mob.mtyping #chat{bottom:auto;top:calc(env(safe-area-inset-top,0px) + 8px)}
-body.mob #chat{width:min(300px,42vw);bottom:calc(env(safe-area-inset-bottom,0px) + 170px)}
+body.mob #chat{z-index:4;pointer-events:none;width:min(300px,42vw);left:calc(env(safe-area-inset-left,0px) + 10px);bottom:calc(env(safe-area-inset-bottom,0px) + 182px)}
+body.mob #inp{pointer-events:auto;font-size:16px;padding:8px 12px}
+body.mob #log{pointer-events:none;max-height:120px}
 #mrot{display:none;position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 56px);transform:translateX(-50%);z-index:7;background:rgba(14,7,10,.9);border:1px solid var(--line,#444);border-radius:10px;padding:8px 14px;font:600 13px var(--fd,sans-serif);color:#fff;text-align:center;max-width:86vw;pointer-events:none}
 @media (orientation:portrait){body.mob.mshow #mrot{display:block}}
 </style>
@@ -1942,7 +1944,7 @@ addEventListener('mousemove',function(e){if(!go||paused||typing)return;if(!lockO
  var de=document.documentElement;
  if(de.requestFullscreen)btn('sm top t7','⛶',function(){try{if(document.fullscreenElement)document.exitFullscreen();else{var r=de.requestFullscreen();if(r&&r.then)r.then(function(){try{screen.orientation.lock('landscape').catch(function(){})}catch(x){}}).catch(function(){})}}catch(x){}});
  var rot=mk('','');rot.id='mrot';B.appendChild(rot);
- B.appendChild(root);
+ var chatEl=document.getElementById('chat');if(chatEl)B.insertBefore(root,chatEl);else B.appendChild(root);   // sohbet kutusu kontrol katmanının ÜSTÜNDE kalsın, dokunulabilsin
  function upd(){
   var show=!!go&&!paused&&!modal&&!typing;
   root.style.display=show?'block':'none';B.classList.toggle('mtyping',!!typing);B.classList.toggle('mshow',show);
