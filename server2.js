@@ -21,6 +21,7 @@
  *                    ikisi de boşsa kodlar e-posta yerine konsola yazılır (sadece yerelde test için!)
  *   TURN_URLS        ICE_SERVERS yerine kısayol: turn:relay.ornek.com:80,turns:relay.ornek.com:443?transport=tcp  (+ TURN_USER, TURN_PASS)
  *   CF_TURN_ID / CF_TURN_TOKEN   Cloudflare Realtime TURN anahtarı (ücretsiz 1000 GB/ay); kimlik bilgisini sunucu otomatik üretir
+ *   AFF_WAG_SHARE    affiliate: davetlinin bahislerindeki kasa avantajının davet edene giden payı (0-0.5, varsayılan 0.10)
  *   TRUST_PROXY=1    Cloudflare gibi herkese açık bir proxy arkasındaysan X-Forwarded-For kullan
  *                    (aynı makinedeki / özel ağdaki proxy otomatik tanınır)
  */
@@ -322,13 +323,17 @@ const wkIdx = t => Math.floor(((t + (BTZ - WK_HOUR) * 36e5) / 864e5 + 3) / 7);  
 const wkNext = t => ((wkIdx(t) + 1) * 7 - 3) * 864e5 - (BTZ - WK_HOUR) * 36e5;
 const moIdx = t => { const d = new Date(t + BTZ * 36e5); return d.getUTCFullYear() * 12 + d.getUTCMonth(); };
 const moNext = t => { const d = new Date(t + BTZ * 36e5); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) - BTZ * 36e5; };
-const WK_PCT = 0.0005, MO_PCT = 0.001, AFF_PCT = 0.03;
+const WK_PCT = 0.0005, MO_PCT = 0.001, AFF_PCT = 0.03;   // AFF_PCT: davetlinin coin satın alımından anında verilen pay
+// Affiliate: davet edilen oyuncunun her bahsinde, o bahsin kasa avantajının AFF_SHARE kadarı davet edene birikir (AFF_WAG_SHARE ile ayarlanır, varsayılan 0.10 = %10)
+const AFF_SHARE = (process.env.AFF_WAG_SHARE || '') !== '' && Number.isFinite(+process.env.AFF_WAG_SHARE) ? Math.min(0.5, Math.max(0, +process.env.AFF_WAG_SHARE)) : 0.10;
 function wagerAdd(a, n, g) {
   if (!(n > 0)) return;
   const old = a.wag || 0, nw = old + n, now = Date.now();
   a.wag = nw;
   a.rb = (a.rb || 0) + n * (EDGE[g] || 0.05) * RB_RATES[tierOf(nw)];
   a.wkW = (a.wkW || 0) + n; a.moW = (a.moW || 0) + n;
+  const rf = a.ref && AFF_SHARE > 0 ? users[a.ref] : null;
+  if (rf && rf !== a) { const c = n * (EDGE[g] || 0.05) * AFF_SHARE; rf.affPend = (rf.affPend || 0) + c; a.affW = (a.affW || 0) + n; a.affC = (a.affC || 0) + c; }
   const q = onlineAcct(a);
   if (q) q.conn.send({ t: 'wag', w: nw, tier: tierOf(nw), up: tierOf(nw) > tierOf(old) ? 1 : 0 });
   if (q && tierOf(nw) > tierOf(old)) broadcast({ t: 'rank', id: q.id, tr: tierOf(nw) }, q.id);
@@ -336,11 +341,14 @@ function wagerAdd(a, n, g) {
 function rwInfo(a) {
   const now = Date.now(), tier = tierOf(a.wag || 0), key = a.name.toLowerCase();
   const per = (w, pct) => Math.floor((w || 0) * pct * (1 + 0.1 * tier));
-  let n = 0; for (const u of Object.values(users)) if (u.ref === key) n++;
+  let n = 0, tw = 0; const lst = [];
+  for (const u of Object.values(users)) if (u.ref === key) { n++; tw += u.affW || 0; lst.push({ n: u.name, w: Math.floor(u.affW || 0), c: Math.floor(u.affC || 0) }); }
+  lst.sort((x, y) => y.c - x.c || y.w - x.w);
   return { t: 'rw', a: 'info', tier, wag: a.wag || 0, rates: RB_RATES.map(r => +(r * 100).toFixed(1)), rb: Math.floor(a.rb || 0), rbTot: a.rbTot || 0,
     wk: { amt: per(a.wkW, WK_PCT), left: a.wkP === wkIdx(now) ? Math.max(1, wkNext(now) - now) : 0, w: Math.floor(a.wkW || 0) },
     mo: { amt: per(a.moW, MO_PCT), left: a.moP === moIdx(now) ? Math.max(1, moNext(now) - now) : 0, w: Math.floor(a.moW || 0) },
-    aff: { code: a.name, ref: a.ref && users[a.ref] ? users[a.ref].name : '', n, earned: a.affEarn || 0, pct: AFF_PCT * 100 } };
+    aff: { code: a.name, ref: a.ref && users[a.ref] ? users[a.ref].name : '', n, earned: a.affEarn || 0, pct: AFF_PCT * 100,
+      wpct: +(AFF_SHARE * 100).toFixed(1), w: Math.floor(tw), pend: Math.floor(a.affPend || 0), list: lst.slice(0, 12) } };
 }
 function rwMsg(p, m, now) {
   const a = p.acct, c = p.conn, act = String(m.a || ''), key = a.name.toLowerCase();
@@ -356,6 +364,7 @@ function rwMsg(p, m, now) {
   if (act === 'claim') {
     const info = rwInfo(a); let n = 0, k = String(m.k || '');
     if (k === 'rb') { n = Math.floor(a.rb || 0); if (n < 1) return err('min'); a.rb -= n; a.rbTot = (a.rbTot || 0) + n; }
+    else if (k === 'af') { n = Math.floor(a.affPend || 0); if (n < 1) return err('min'); a.affPend -= n; a.affEarn = (a.affEarn || 0) + n; }
     else if (k === 'wk') { if (info.wk.left > 0) return err('wait'); n = info.wk.amt; if (n < 1) return err('min'); a.wkW = 0; a.wkP = wkIdx(now); }
     else if (k === 'mo') { if (info.mo.left > 0) return err('wait'); n = info.mo.amt; if (n < 1) return err('min'); a.moW = 0; a.moP = moIdx(now); }
     else return;
@@ -442,9 +451,9 @@ function checkCode(key, code) {    // { r: 'ok', p } | { r: 'bad' } | { r: 'exp'
   return { r: 'ok', p };
 }
 
-function newAccount(name, salt, hash, email) {
-  return { name, email: email || '', mailOk: !!email, salt: salt.toString('base64'), hash: hash.toString('base64'), toks: [], gold: START_GOLD, owned: DEFAULT_OWNED.slice(),
-    eq: { c: 'c1', h: 'h1', o: 'o1', d: 'd1' }, bud: BUD_START, budT: Date.now(), created: Date.now() };
+function newAccount(name, salt, hash, email, ref) {
+  return Object.assign(ref ? { ref } : {}, { name, email: email || '', mailOk: !!email, salt: salt.toString('base64'), hash: hash.toString('base64'), toks: [], gold: START_GOLD, owned: DEFAULT_OWNED.slice(),
+    eq: { c: 'c1', h: 'h1', o: 'o1', d: 'd1' }, bud: BUD_START, budT: Date.now(), created: Date.now() });
 }
 function authGate(c) {               // IP başına dakikada 12 giriş / kayıt / doğrulama işlemi
   const now = Date.now(), lt = (loginTries.get(c.ip) || []).filter(t => now - t < 60000);
@@ -467,6 +476,8 @@ function doAuth(c, m) {
     if (!validName(name)) return fail('name');
     if (!email) return fail('email');
     if (pw.length < PW_MIN || pw.toLowerCase() === key) return fail('pw');
+    const aff = typeof m.aff === 'string' ? cleanText(m.aff, 14).toLowerCase() : '';   // isteğe bağlı affiliate kodu = davet edenin kullanıcı adı
+    if (aff && (aff === key || !users[aff])) return fail('affbad');
     const canon = mailCanon(email);
     if (users[key]) return fail('taken');
     if (mailUser(canon)) return fail('mailtaken');
@@ -478,7 +489,7 @@ function doAuth(c, m) {
     crypto.scrypt(pw, salt, 32, (e, k) => {
       if (e || c.closed) { c.authBusy = false; return; }
       if (users[key] || mailUser(canon)) { c.authBusy = false; return fail(users[key] ? 'taken' : 'mailtaken'); }
-      issueCode(c, 'reg:' + canon, { name, key, email, salt, hash: k }, email, langOf(m), 'reg').then(er => {
+      issueCode(c, 'reg:' + canon, { name, key, email, salt, hash: k, ref: aff }, email, langOf(m), 'reg').then(er => {
         c.authBusy = false;
         if (er) return fail(er);
         c.send({ t: 'authstep', s: 'code', k: 'reg', email });
@@ -521,9 +532,9 @@ function doRegVerify(c, m) {
   if (banOf(p.key)) return c.send({ t: 'autherr', c: 'banned' });
   if (users[p.key]) return c.send({ t: 'autherr', c: 'taken' });
   if (mailUser(canon)) return c.send({ t: 'autherr', c: 'mailtaken' });
-  const a = newAccount(p.name, p.salt, p.hash, p.email);
+  const a = newAccount(p.name, p.salt, p.hash, p.email, p.ref && users[p.ref] ? p.ref : '');
   users[p.key] = a; mailBind(canon, p.key); saveUsers();
-  log('yeni hesap', p.name);
+  log('yeni hesap', p.name, a.ref ? '(davet: ' + a.ref + ')' : '');
   authOk(c, a, true);
 }
 // şifremi unuttum: hesap var mı yok mu belli etmeden "kod gönderildi" der
