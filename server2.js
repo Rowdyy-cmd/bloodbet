@@ -1527,14 +1527,29 @@ function loadHtml() {
 }
 const SEC = { 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' };
 
+const LOGO_FILE = 'bloodbet-logo.png';   // server2.js ile aynı klasörde olmalı; favicon / uygulama ikonu / paylaşım önizlemesi için
+const LOGO_PATHS = new Set(['/bloodbet-logo.png', '/favicon.ico', '/apple-touch-icon.png']);
+function originOf(req) {                // paylaşım önizlemesi (og:image) için mutlak adres
+  const h = String(req.headers.host || '').toLowerCase();
+  if (!/^[a-z0-9.-]+(:\d+)?$/.test(h)) return '';
+  const pr = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+  return (pr === 'http' || (!pr && /^(localhost|127\.)/.test(h)) ? 'http' : 'https') + '://' + h;
+}
 const server = http.createServer((req, res) => {
   const u = (req.url || '/').split('?')[0];
+  if (LOGO_PATHS.has(u)) {
+    return fs.readFile(path.join(__dirname, LOGO_FILE), (e, b) => {
+      if (e) { res.writeHead(404, { 'Content-Type': 'text/plain', ...SEC }); return res.end('404'); }
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400', ...SEC });
+      res.end(b);
+    });
+  }
   if (u === '/healthz') { res.writeHead(200, { 'Content-Type': 'text/plain', ...SEC }); return res.end('ok ' + players.size + (REMOTE ? ' db' : ' dosya')); }
   if (u === '/' || u === '/index.html') {
     const body = loadHtml();
     if (!body) { res.writeHead(404, { 'Content-Type': 'text/plain', ...SEC }); return res.end('index.html bulunamadı (oyun dosyasını index.html adıyla server2.js ile aynı klasöre koy).'); }
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', ...SEC });
-    return res.end(body);
+    return res.end(body.toString('utf8').replace(/__ORIGIN__/g, originOf(req)));
   }
   res.writeHead(404, { 'Content-Type': 'text/plain', ...SEC });
   res.end('404');
