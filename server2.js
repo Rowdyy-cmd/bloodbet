@@ -22,6 +22,8 @@
  *   TURN_URLS        ICE_SERVERS yerine kısayol: turn:relay.ornek.com:80,turns:relay.ornek.com:443?transport=tcp  (+ TURN_USER, TURN_PASS)
  *   CF_TURN_ID / CF_TURN_TOKEN   Cloudflare Realtime TURN anahtarı (ücretsiz 1000 GB/ay); kimlik bilgisini sunucu otomatik üretir
  *   AFF_WAG_SHARE    affiliate: davetlinin bahislerindeki kasa avantajının davet edene giden payı (0-0.5, varsayılan 0.10)
+ *   NOWPAY_API_KEY / NOWPAY_IPN_SECRET / PUBLIC_URL   NOWPayments ile kişiye özel adres + otomatik coin yatırma (isteğe bağlı; yoksa elle onay)
+ *   NOWPAY_USDT      USDT ağı (varsayılan usdttrc20)
  *   TRUST_PROXY=1    Cloudflare gibi herkese açık bir proxy arkasındaysan X-Forwarded-For kullan
  *                    (aynı makinedeki / özel ağdaki proxy otomatik tanınır)
  */
@@ -1139,11 +1141,89 @@ async function loadDepsRemote() {
   const res = (await redis(['HGETALL', 'bloodbet:deps'])) || [];
   for (let i = 0; i + 1 < res.length; i += 2) { try { deps[res[i]] = JSON.parse(res[i + 1]); } catch (e) { } }
 }
+/* ---------- NOWPayments (isteğe bağlı): her ödeme için kişiye özel adres + otomatik onay ----------
+ * NOWPAY_API_KEY, NOWPAY_IPN_SECRET, PUBLIC_URL (https://siten.com) üçü de doluysa otomatik mod açılır; değilse eski elle onay sistemi çalışır.
+ * NOWPAY_USDT: USDT ağı (varsayılan usdttrc20; usdterc20, usdtbsc ... da olabilir) */
+const NP_KEY = process.env.NOWPAY_API_KEY || '', NP_SECRET = process.env.NOWPAY_IPN_SECRET || '';
+const NP_API = (process.env.NOWPAY_API_URL || 'https://api.nowpayments.io/v1').replace(/\/+$/, '');
+const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/+$/, '');
+const NP_ON = !!(NP_KEY && NP_SECRET && /^https?:\/\/[^\s/]+/.test(PUBLIC_URL));
+const NP_USDT = (process.env.NOWPAY_USDT || 'usdttrc20').toLowerCase();
+const NP_CUR = { TRX: ['trx', 'TRON'], BTC: ['btc', 'Bitcoin'], ETH: ['eth', 'ERC20'], BNB: ['bnbbsc', 'BEP20'],
+  USDT: [NP_USDT, /erc20$/.test(NP_USDT) ? 'ERC20' : /bsc$|bep20$/.test(NP_USDT) ? 'BEP20' : 'TRC20'],
+  LTC: ['ltc', 'Litecoin'], SOL: ['sol', 'Solana'], XRP: ['xrp', 'XRP Ledger'], DOGE: ['doge', 'Dogecoin'] };
+async function npCall(method, p, body) {
+  const r = await fetch(NP_API + p, { method, headers: { 'x-api-key': NP_KEY, 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(15000) });
+  const txt = await r.text(); let j = null; try { j = JSON.parse(txt); } catch (e) { }
+  if (!r.ok) throw new Error('NOWPayments ' + r.status + ' ' + txt.slice(0, 200));
+  return j;
+}
+const sortKeys = o => Array.isArray(o) ? o.map(sortKeys) : (o && typeof o === 'object') ? Object.keys(o).sort().reduce((r, k) => (r[k] = sortKeys(o[k]), r), {}) : o;
 const depCoinsOf = usdC => Math.floor(usdC * (1 - DEP_FEE));            // 1 cent = 1 coin
-const depView = (d, full) => Object.assign({ id: d.id, coin: d.coin, net: d.net, addr: d.addr, usdC: d.usdC, coins: d.coins, fee: d.usdC - d.coins, st: d.st, at: d.at, txid: d.txid || '' }, full ? { name: d.name } : {});
+const depView = (d, full) => Object.assign({ id: d.id, coin: d.coin, net: d.net, addr: d.addr, usdC: d.usdC, coins: d.coins, fee: d.usdC - (d.coinsFull || d.coins), st: d.st, at: d.at, txid: d.txid || '',
+  auto: d.auto ? 1 : 0, payAmt: d.payAmt || '', memo: d.memo || '', np: d.npSt || '' }, full ? { name: d.name } : {});
 const depOList = () => Object.values(deps).filter(x => x.st === 'paid' || x.st === 'open').sort((x, y) => x.at - y.at).map(x => depView(x, true));
 const ownersCast = obj => { for (const q of players.values()) if (q.role === 'owner') q.conn.send(obj); };
 const onlineAcct = a => { for (const q of players.values()) if (q.acct === a) return q; return null; };
+const depMineOf = key => Object.values(deps).filter(d => d.key === key).sort((x, y) => y.at - x.at).slice(0, 12).map(d => depView(d));
+function depCredit(d, coins, by) {     // yatırımı hesaba işler (tek seferlik); true = yattı
+  const t = users[d.key]; if (!t || d.st === 'ok' || !(coins >= 1)) return false;
+  const full = d.coinsFull || d.coins;
+  d.coinsFull = full; d.st = 'ok'; d.upd = Date.now(); d.by = by; d.coins = coins; depSave(d);      // önce durumu kaydet: iki kez yatmasın
+  t.gold += coins; t.depC = (t.depC || 0) + Math.round(d.usdC * coins / full);
+  const rf = t.ref && users[t.ref];
+  if (rf) { const com = Math.floor(coins * AFF_PCT); if (com > 0) { rf.gold += com; rf.affEarn = (rf.affEarn || 0) + com; const rq = onlineAcct(rf); if (rq) { rq.gold = rf.gold; pfSync(rq, { m: 'aff', n: com, who: t.name }); } } }
+  saveUsers(true);
+  const q = onlineAcct(t);
+  if (q) { q.gold = t.gold; pfSync(q, { m: 'depok', n: coins }); broadcast({ t: 'me', id: q.id, eq: q.eq, gold: q.gold }, q.id); q.conn.send({ t: 'dep', a: 'mine', list: depMineOf(d.key) }); }
+  ownersCast({ t: 'dep', a: 'olist', list: depOList() });
+  return true;
+}
+// NOWPayments'tan gelen (IPN ya da sorgu) ödeme durumunu işler
+function npApply(d, j) {
+  if (!d || !d.auto || String(j.payment_id) !== String(d.npId)) return;
+  const stt = String(j.payment_status || '');
+  if (d.npSt !== stt) { d.npSt = stt; d.upd = Date.now(); depSave(d); const q = onlineAcct(users[d.key] || {}); if (q) q.conn.send({ t: 'dep', a: 'mine', list: depMineOf(d.key) }); }
+  if (d.st === 'ok') return;
+  if (stt === 'finished' || stt === 'partially_paid') {
+    if (d.st === 'no') return log('reddedilmiş yatırıma ödeme geldi, elle bak:', d.id, stt);
+    if (j.price_amount != null && Math.abs(Number(j.price_amount) - d.usdC / 100) > 0.005) return log('IPN tutarı uyuşmuyor, atlandı:', d.id, j.price_amount);
+    const paid = Number(j.actually_paid), want = Number(j.pay_amount || d.payAmt);
+    const ratio = stt === 'finished' ? 1 : (want > 0 && paid > 0 ? Math.min(1, paid / want) : 0);
+    const coins = Math.floor((d.coinsFull || d.coins) * ratio);
+    if (depCredit(d, coins, 'auto')) log('otomatik yatırım', d.name, '+' + coins, 'coin', stt === 'finished' ? '' : '(kısmi %' + Math.round(ratio * 100) + ')', d.id);
+  } else if ((stt === 'failed' || stt === 'expired' || stt === 'refunded') && (d.st === 'open' || d.st === 'paid')) {
+    d.st = 'no'; d.upd = Date.now(); d.by = 'auto'; depSave(d);
+    const q = onlineAcct(users[d.key] || {}); if (q) q.conn.send({ t: 'dep', a: 'mine', list: depMineOf(d.key) });
+    ownersCast({ t: 'dep', a: 'olist', list: depOList() });
+  }
+}
+function npIpn(req, res) {
+  const end = (code, msg) => { res.writeHead(code, { 'Content-Type': 'text/plain', ...SEC }); res.end(msg || ''); };
+  if (!NP_ON) return end(404, '404');
+  const chunks = []; let size = 0;
+  req.on('data', c => { size += c.length; if (size > 65536) { req.destroy(); return; } chunks.push(c); });
+  req.on('end', () => {
+    let j; try { j = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch (e) { return end(400, 'bad'); }
+    const exp = crypto.createHmac('sha512', NP_SECRET).update(JSON.stringify(sortKeys(j))).digest('hex');
+    if (!safeEq(String(req.headers['x-nowpayments-sig'] || ''), exp)) { log('IPN imzası geçersiz'); return end(401, 'sig'); }
+    try { npApply(deps[String(j.order_id || '')], j); } catch (e) { log('IPN işleme hatası:', e.message); return end(500, 'err'); }
+    end(200, 'ok');
+  });
+}
+// IPN kaçarsa / sunucu uyuyorsa: bekleyen otomatik ödemeleri düzenli sorgula
+setInterval(async () => {
+  if (!NP_ON) return;
+  const now = Date.now(); let n = 0;
+  for (const d of Object.values(deps)) {
+    if (!d.auto || !d.npId || (d.st !== 'open' && d.st !== 'cx' && d.st !== 'paid') || now - d.at > 3 * 864e5) continue;
+    if (d.st === 'open' && now - d.at > 864e5 && (!d.npSt || d.npSt === 'waiting')) { d.st = 'cx'; d.upd = now; depSave(d); continue; }
+    if (now - (d.chk || 0) < (now - d.at < 36e5 ? 55e3 : 6e5) || n >= 8) continue;
+    d.chk = now; n++;
+    try { npApply(d, await npCall('GET', '/payment/' + encodeURIComponent(d.npId))); } catch (e) { log('ödeme sorgu hatası:', e.message); }
+  }
+}, 30000).unref();
 function depMsg(p, m, now) {
   const a = p.acct, key = a.name.toLowerCase(), c = p.conn, act = String(m.a || '');
   const err = code => c.send({ t: 'dep', a: 'err', c: code });
@@ -1152,18 +1232,37 @@ function depMsg(p, m, now) {
   const mine = () => Object.values(deps).filter(d => d.key === key).sort((x, y) => y.at - x.at).slice(0, 12).map(d => depView(d));
   if (act === 'info') {
     return c.send({ t: 'dep', a: 'info', rate: COIN_RATE, fee: DEP_FEE * 100, min: DEP_MIN_C / 100, max: DEP_MAX_C / 100,
-      coins: CRYPTOS.map(([id, name, net]) => ({ id, name, net: (WALLETS[id] && WALLETS[id].net) || net, on: !!(WALLETS[id] && WALLETS[id].addr) })), list: mine() });
+      auto: NP_ON ? 1 : 0,
+      coins: CRYPTOS.map(([id, name, net]) => NP_ON ? ({ id, name, net: NP_CUR[id] ? NP_CUR[id][1] : net, on: !!NP_CUR[id] }) : ({ id, name, net: (WALLETS[id] && WALLETS[id].net) || net, on: !!(WALLETS[id] && WALLETS[id].addr) })), list: mine() });
   }
   if (act === 'req') {
     if (!m.age) return err('age');
     const cr = CRYPTOS.find(x => x[0] === m.coin), w = cr && WALLETS[cr[0]];
-    if (!cr || !w || !w.addr) return err('coin');
+    if (!cr || (NP_ON ? !NP_CUR[cr[0]] : (!w || !w.addr))) return err('coin');
     const usdC = Math.round(Number(m.usd) * 100);
     if (!(usdC >= DEP_MIN_C && usdC <= DEP_MAX_C)) return err('amt');
     const open = Object.values(deps).filter(d => d.key === key && (d.st === 'open' || d.st === 'paid'));
     if (open.length >= 3) return err('many');
     const day = Object.values(deps).filter(d => d.key === key && d.st !== 'no' && d.st !== 'cx' && now - d.at < 864e5).reduce((t, d) => t + d.usdC, 0);
     if (day + usdC > DEP_DAY_C) return err('day');
+    if (NP_ON) {                                     // otomatik mod: bu ödeme için kişiye özel adres iste
+      if (p.depBusy) return; p.depBusy = true;
+      const np = NP_CUR[cr[0]];
+      const nd = { id: 'd' + now.toString(36) + crypto.randomBytes(3).toString('hex'), key, name: a.name, usdC, coins: depCoinsOf(usdC), coin: cr[0], net: np[1], addr: '', st: 'open', at: now, auto: 1 };
+      npCall('POST', '/payment', { price_amount: usdC / 100, price_currency: 'usd', pay_currency: np[0], order_id: nd.id, order_description: 'BloodBet coin', ipn_callback_url: PUBLIC_URL + '/ipn/nowpayments' })
+        .then(j => {
+          if (!j || !j.pay_address || j.payment_id == null) throw new Error('adres/ID yok: ' + JSON.stringify(j).slice(0, 160));
+          nd.addr = String(j.pay_address); nd.payAmt = String(j.pay_amount); nd.npId = String(j.payment_id); nd.npSt = String(j.payment_status || 'waiting');
+          if (j.payin_extra_id) nd.memo = String(j.payin_extra_id);
+          deps[nd.id] = nd; depSave(nd);
+          ownersCast({ t: 'dep', a: 'new', d: depView(nd, true) });
+          log('otomatik yatırım adresi açıldı', a.name, '$' + usdC / 100, cr[0], nd.id);
+          c.send({ t: 'dep', a: 'made', d: depView(nd), list: mine() });
+        })
+        .catch(e => { log('NOWPayments hatası:', e.message); err('gw'); })
+        .finally(() => { p.depBusy = false; });
+      return;
+    }
     const d = { id: 'd' + now.toString(36) + crypto.randomBytes(3).toString('hex'), key, name: a.name, usdC, coins: depCoinsOf(usdC), coin: cr[0], net: w.net || cr[2], addr: String(w.addr), st: 'open', at: now };
     deps[d.id] = d; depSave(d);
     ownersCast({ t: 'dep', a: 'new', d: depView(d, true) });
@@ -1174,7 +1273,7 @@ function depMsg(p, m, now) {
   if (act === 'paid' || act === 'cx') {
     if (!d || d.key !== key) return err('none');
     if (act === 'cx') { if (d.st !== 'open' && d.st !== 'paid') return err('state'); d.st = 'cx'; d.upd = now; depSave(d); ownersCast({ t: 'dep', a: 'olist', list: depOList() }); return c.send({ t: 'dep', a: 'mine', list: mine() }); }
-    if (d.st !== 'open') return err('state');
+    if (d.st !== 'open' || d.auto) return err('state');
     const txid = String(m.txid || '').trim().replace(/\s+/g, '').slice(0, 120);
     if (!/^[A-Za-z0-9:_\-.]{12,120}$/.test(txid)) return err('txid');
     const low = txid.toLowerCase();
@@ -1191,14 +1290,7 @@ function depMsg(p, m, now) {
     if (!d || (act === 'ok' ? d.st !== 'paid' : (d.st !== 'paid' && d.st !== 'open'))) return err('state');
     if (act === 'no') { d.st = 'no'; d.upd = now; d.by = p.name; depSave(d); log('yatırım reddedildi', d.name, d.id); }
     else {
-      const t = users[d.key]; if (!t) return err('none');
-      d.st = 'ok'; d.upd = now; d.by = p.name; depSave(d);       // önce durumu kaydet: iki kez yatmasın
-      t.gold += d.coins; t.depC = (t.depC || 0) + d.usdC;
-      const rf = t.ref && users[t.ref];
-      if (rf) { const com = Math.floor(d.coins * AFF_PCT); if (com > 0) { rf.gold += com; rf.affEarn = (rf.affEarn || 0) + com; const rq = onlineAcct(rf); if (rq) { rq.gold = rf.gold; pfSync(rq, { m: 'aff', n: com, who: t.name }); } } }
-      saveUsers(true);
-      const q = onlineAcct(t);
-      if (q) { q.gold = t.gold; pfSync(q, { m: 'depok', n: d.coins }); broadcast({ t: 'me', id: q.id, eq: q.eq, gold: q.gold }, q.id); }
+      if (!users[d.key] || !depCredit(d, d.coins, p.name)) return err('none');
       log('yatırım onaylandı', d.name, '+' + d.coins, 'coin ($' + d.usdC / 100 + ') by', p.name);
     }
     const q2 = onlineAcct(users[d.key] || {}); if (q2) q2.conn.send({ t: 'dep', a: 'mine', list: Object.values(deps).filter(x => x.key === d.key).sort((x, y) => y.at - x.at).slice(0, 12).map(x => depView(x)) });
@@ -1537,6 +1629,7 @@ function originOf(req) {                // paylaşım önizlemesi (og:image) iç
 }
 const server = http.createServer((req, res) => {
   const u = (req.url || '/').split('?')[0];
+  if (req.method === 'POST' && u === '/ipn/nowpayments') return npIpn(req, res);
   if (LOGO_PATHS.has(u)) {
     return fs.readFile(path.join(__dirname, LOGO_FILE), (e, b) => {
       if (e) { res.writeHead(404, { 'Content-Type': 'text/plain', ...SEC }); return res.end('404'); }
@@ -1602,6 +1695,7 @@ if (require.main === module) {
     log(`BloodBet sunucusu http://localhost:${PORT} adresinde (WebSocket: /ws)`);
     log(REMOTE ? 'Hesaplar: Upstash veritabanı (kalıcı)' : 'Hesaplar: yerel dosya ' + USERS_FILE + ' (barındırma diski kalıcı değilse güncellemede silinir!)');
     log((CF_ID && CF_TOKEN) ? 'Sesli sohbet: Cloudflare TURN kullanılacak' : ICE && ICE.some(x => [].concat(x.urls).some(u => /^turns?:/.test(u))) ? 'Sesli sohbet: TURN sunucusu ayarlı' : 'Sesli sohbet: TURN yok (farklı ağlardaki oyuncular birbirini duyamayabilir)');
+    log(NP_ON ? 'Coin satın alma: NOWPayments otomatik mod (IPN: ' + PUBLIC_URL + '/ipn/nowpayments)' : 'Coin satın alma: elle onay modu (NOWPAY_* ayarlı değil)');
     log(MAIL_ON ? 'E-posta doğrulama: Resend ile gönderiliyor' : 'UYARI: RESEND_API_KEY / MAIL_FROM yok, doğrulama kodları e-posta yerine bu konsola yazılır (sadece test için!)');
     if (!process.env.OWNER_CODE) log('OWNER_CODE verilmedi, bu oturum için üretildi:', OWNER_CODE);
     if (!process.env.ADMIN_CODE) log('ADMIN_CODE verilmedi, bu oturum için üretildi:', ADMIN_CODE);
