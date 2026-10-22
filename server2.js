@@ -1159,7 +1159,13 @@ async function npCall(method, p, body) {
   if (!r.ok) { const e = new Error('NOWPayments ' + r.status + ' ' + txt.slice(0, 200)); e.np = j && j.code; throw e; }
   return j;
 }
-const NP_MIN = {};                       // coin -> öğrenilen minimum (USD), 1 saat önbellek
+const NP_MIN = {};                       // coin -> minimum yatırım (USD), 1 saat geçerli
+async function npMinRefresh() {          // her coinin güncel minimumunu öğren, oyuncuya butonda göster
+  for (const [id, np] of Object.entries(NP_CUR)) {
+    try { const r = await npCall('GET', '/min-amount?currency_from=' + encodeURIComponent(np[0]) + '&currency_to=usd&fiat_equivalent=usd'); const f = Number(r.fiat_equivalent); if (f > 0) NP_MIN[id] = { v: Math.ceil(f + 0.5), t: Date.now() }; }
+    catch (e) { log('minimum sorgusu başarısız', id, e.message.slice(0, 120)); }
+  }
+}
 const sortKeys = o => Array.isArray(o) ? o.map(sortKeys) : (o && typeof o === 'object') ? Object.keys(o).sort().reduce((r, k) => (r[k] = sortKeys(o[k]), r), {}) : o;
 const depCoinsOf = usdC => Math.floor(usdC * (1 - DEP_FEE));            // 1 cent = 1 coin
 const depView = (d, full) => Object.assign({ id: d.id, coin: d.coin, net: d.net, addr: d.addr, usdC: d.usdC, coins: d.coins, fee: d.usdC - (d.coinsFull || d.coins), st: d.st, at: d.at, txid: d.txid || '',
@@ -1213,6 +1219,7 @@ function npIpn(req, res) {
     end(200, 'ok');
   });
 }
+if (NP_ON && require.main === module) { setTimeout(npMinRefresh, 3000); setInterval(npMinRefresh, 30 * 60000).unref(); }
 // IPN kaçarsa / sunucu uyuyorsa: bekleyen otomatik ödemeleri düzenli sorgula
 setInterval(async () => {
   if (!NP_ON) return;
@@ -1234,7 +1241,7 @@ function depMsg(p, m, now) {
   if (act === 'info') {
     return c.send({ t: 'dep', a: 'info', rate: COIN_RATE, fee: DEP_FEE * 100, min: DEP_MIN_C / 100, max: DEP_MAX_C / 100,
       auto: NP_ON ? 1 : 0,
-      coins: CRYPTOS.map(([id, name, net]) => NP_ON ? ({ id, name, net: NP_CUR[id] ? NP_CUR[id][1] : net, on: !!NP_CUR[id] }) : ({ id, name, net: (WALLETS[id] && WALLETS[id].net) || net, on: !!(WALLETS[id] && WALLETS[id].addr) })), list: mine() });
+      coins: CRYPTOS.map(([id, name, net]) => NP_ON ? ({ id, name, net: NP_CUR[id] ? NP_CUR[id][1] : net, on: !!NP_CUR[id], min: NP_MIN[id] && Date.now() - NP_MIN[id].t < 36e5 ? NP_MIN[id].v : 0 }) : ({ id, name, net: (WALLETS[id] && WALLETS[id].net) || net, on: !!(WALLETS[id] && WALLETS[id].addr) })), list: mine() });
   }
   if (act === 'req') {
     if (!m.age) return err('age');
@@ -1258,14 +1265,14 @@ function depMsg(p, m, now) {
           if (j.payin_extra_id) nd.memo = String(j.payin_extra_id);
           deps[nd.id] = nd; depSave(nd);
           ownersCast({ t: 'dep', a: 'new', d: depView(nd, true) });
-          log('otomatik yatırım adresi açıldı', a.name, '$' + usdC / 100, cr[0], nd.id);
+          log('otomatik yatırım adresi açıldı', a.name, '$' + usdC / 100, cr[0], nd.id, 'np#' + nd.npId);
           c.send({ t: 'dep', a: 'made', d: depView(nd), list: mine() });
         })
         .catch(async e => {
           log('NOWPayments hatası:', e.message);
           if (e.np !== 'AMOUNT_MINIMAL_ERROR') return err('gw');
           let v = 0;                                   // gerçek minimumu (USD) öğrenip oyuncuya göster
-          try { const r = await npCall('GET', '/min-amount?currency_from=' + encodeURIComponent(np[0]) + '&currency_to=usd&fiat_equivalent=usd'); v = Math.ceil(Number(r.fiat_equivalent) * 1.1 + 0.5) || 0; } catch (x) { log('minimum sorgusu başarısız:', x.message); }
+          try { const r = await npCall('GET', '/min-amount?currency_from=' + encodeURIComponent(np[0]) + '&currency_to=usd&fiat_equivalent=usd'); v = Math.ceil(Number(r.fiat_equivalent) + 0.5) || 0; } catch (x) { log('minimum sorgusu başarısız:', x.message); }
           if (v > usdC / 100) NP_MIN[cr[0]] = { v, t: Date.now() };
           c.send({ t: 'dep', a: 'err', c: 'min', v: v > usdC / 100 ? v : 0 });
         })
