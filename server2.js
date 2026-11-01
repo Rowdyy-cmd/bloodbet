@@ -107,10 +107,10 @@ function wallT(ox, oz, dx, dz) {                     // ışının arena duvarı
 
 /* ---------- şans oyunları (sunucu hakemlidir) ---------- */
 const RED = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
-const WHEEL = [0, .5, 0, 2, 0, .5, 0, 1.5, 0, .5, 0, 3, 0, .5, 0, 2, 0, .5, 0, 1, 0, .5, 0, 9];   // 24 dilim, geri dönüş ≈ %89,6
+const WHEEL = [0, .5, 0, 2, 0, .5, 0, 1.5, 0, .5, 0, 4, 0, .5, 0, 2, 0, .75, 0, 1, 0, .5, 0, 10];   // 24 dilim, geri dönüş ≈ %99
 const BET_KINDS = new Set(['n', 'red', 'black', 'odd', 'even', 'low', 'high', 'd1', 'd2', 'd3', 'c1', 'c2', 'c3']);
 const MAX_BET = 1e12, MAX_TOTAL = 1e12, BET_GAP = 3500, BIG_WIN = 3000;     // bahis üst sınırı yok (yalnızca bakiye ve taşma koruması)
-const RK = 0.95;                       // rulette ödemelerden %5 kasa payı düşülür (geri dönüş ≈ %92,4)
+const RK = 1;                          // Avrupa ruleti (tek sıfır): tek sayı 35:1, dış bahisler 1:1 → geri dönüş %97,3 (Stake ile aynı)
 function roulettePay(b, n) {
   let w = 0;
   if (b.k === 'n') w = b.v === n ? 36 : 0;
@@ -319,10 +319,10 @@ const wealthOf = (gold) => gold;     // eşyalar artık satın alınmıyor: serv
 const TRADE_ITEMS = false;   // eşya takası kapalı: eşyalar rank ile açılır, takasla rank atlanamaz (coin takası açık)
 const REQ = {"c1":0,"c2":1,"c3":2,"c4":3,"c5":4,"c6":5,"c7":7,"c8":8,"c9":9,"c10":10,"o1":0,"o2":1,"o3":2,"o7":3,"o4":4,"o8":5,"o5":7,"o9":8,"o6":9,"o10":10,"h1":0,"h6":1,"h7":2,"h2":3,"h8":4,"h4":5,"h5":7,"h9":8,"h3":9,"h10":10,"d1":0,"d5":1,"d2":2,"d6":4,"d7":5,"d4":6,"d3":7,"d8":9,"d9":10};
 /* ---------- RANK: toplam wager'a (oynanan bahis) göre tier ---------- */
-const TIERS = [30000, 80000, 150000, 250000, 400000, 650000, 1000000, 1600000, 2500000, 4000000];   // Tier 1..10 için gereken toplam wager
+const TIERS = [5000, 15000, 40000, 90000, 180000, 350000, 650000, 1100000, 1800000, 3000000];   // Tier 1..10 için gereken toplam wager
 const tierOf = w => { let t = 0; while (t < TIERS.length && w >= TIERS[t]) t++; return t; };
 const RB_RATES = [0.05, 0.052, 0.054, 0.056, 0.058, 0.06, 0.062, 0.064, 0.066, 0.068, 0.07];   // rank (-,I..X) -> kasa avantajından geri dönen pay
-const EDGE = { roul: 0.076, mines: 0.05, wof: 0.104, bj: 0.02, case: 0.07, towers: 0.04, dice: 0.03, cf: 0.02, cfp: 0.05 };                                    // oyun başına kasa avantajı
+const EDGE = { roul: 0.027, mines: 0.01, wof: 0.0104, bj: 0.011, case: 0.04, towers: 0.01, dice: 0.01, cf: 0.02, cfp: 0.05 };   // gerçek kasa avantajları (rakeback / affiliate bunun üzerinden hesaplanır)                                    // oyun başına kasa avantajı
 // Haftalık bonus her pazartesi 06:00'da (TSİ), aylık bonus her ayın 1'inde 00:00'da (TSİ) yenilenir
 const BTZ = +process.env.DAY_TZ_H || 3, WK_HOUR = 6;
 const wkIdx = t => Math.floor(((t + (BTZ - WK_HOUR) * 36e5) / 864e5 + 3) / 7);                     // 1970-01-01 perşembe -> pazartesi tabanlı hafta no
@@ -830,7 +830,7 @@ function doShot(p, m, now) {
 }
 
 /* ---------- blackjack (sunucu hakemlidir) ---------- */
-// kurallar: sonsuz deste · kasa yumuşak 17'de çeker · blackjack 3:2 · bölme / sigorta yok · iki katlama ilk iki kartta serbest
+// kurallar: sonsuz deste · kasa tüm 17'lerde durur · blackjack 3:2 · bölme / sigorta yok · iki katlama ilk iki kartta serbest
 const BJ_GAP = 1800, MN_GAP = 1500;
 const bjDraw = () => crypto.randomInt(52);
 function bjVal(cs) {
@@ -917,7 +917,7 @@ function bjFinish(p, now, res, pay) {
 }
 function bjStand(p, now) {
   const h = p.bj, pv = bjVal(h.p).v;
-  for (; ;) { const dv = bjVal(h.d); if (dv.v < 17 || (dv.v === 17 && dv.soft)) h.d.push(bjDraw()); else break; }
+  for (; ;) { const dv = bjVal(h.d); if (dv.v < 17) h.d.push(bjDraw()); else break; }
   const dv = bjVal(h.d).v;
   if (dv > 21) return bjFinish(p, now, 'dbust', h.bet * 2);
   if (pv > dv) return bjFinish(p, now, 'win', h.bet * 2);
@@ -961,7 +961,7 @@ function bjAct(p, m, now) {
 
 /* ---------- mines (sunucu hakemlidir) ---------- */
 // 5x5 tahta · her güvenli karede çarpan artar · %5 kasa payı · en fazla x100
-const MN_RTP = 0.95, MN_CAP = 100, MN_N = 25;
+const MN_RTP = 0.99, MN_CAP = 1000, MN_N = 25;      // %99 geri dönüş (Stake Mines ile aynı)
 function mnMult(m, k) {
   if (k <= 0) return 1;
   let x = MN_RTP;
@@ -1007,7 +1007,7 @@ function mnAct(p, m, now) {
 }
 
 /* ---------- KASALAR: içinden coin çıkar, sonuç sunucuda belirlenir (RTP ~%93) ---------- */
-const CASE_TBL = [{"p":230,"o":[70,25,5,0,0],"z":[[78,0],[130,0],[181,0],[233,1],[311,1],[389,1],[519,2],[907,2],[1296,2]],"w":[70,70,70,25,25,25,5,5,5]},{"p":450,"o":[45,35,17,3,0],"z":[[91,0],[160,0],[229,0],[274,1],[366,1],[480,1],[595,2],[823,2],[1098,2],[1372,3],[2287,3],[3659,3]],"w":[45,45,45,35,35,35,17,17,17,3,3,3]},{"p":750,"o":[20,40,30,9,1],"z":[[74,0],[124,0],[173,0],[198,1],[296,1],[420,1],[494,2],[741,2],[988,2],[1235,3],[1976,3],[2965,3],[5929,4],[12352,4],[24705,4]],"w":[20,20,20,40,40,40,30,30,30,9,9,9,1,1,1]},{"p":1350,"o":[5,25,40,25,5],"z":[[62,0],[93,0],[125,0],[156,1],[249,1],[374,1],[436,2],[623,2],[872,2],[1121,3],[1743,3],[2802,3],[4358,4],[7471,4],[15564,4]],"w":[5,5,5,25,25,25,40,40,40,25,25,25,5,5,5]},{"p":2250,"o":[0,10,30,40,20],"z":[[125,1],[188,1],[281,1],[313,2],[469,2],[688,2],[875,3],[1376,3],[2188,3],[3126,4],[5627,4],[11254,4]],"w":[10,10,10,30,30,30,40,40,40,20,20,20]}];   // p: fiyat · o: bant yüzdeleri · z: [ödül, bant] · w: ağırlık
+const CASE_TBL = [{"p":230,"o":[70,25,5,0,0],"z":[[80,0],[134,0],[187,0],[241,1],[321,1],[401,1],[535,2],[937,2],[1338,2]],"w":[70,70,70,25,25,25,5,5,5]},{"p":450,"o":[45,35,17,3,0],"z":[[94,0],[165,0],[236,0],[283,1],[378,1],[496,1],[614,2],[850,2],[1133,2],[1416,3],[2361,3],[3777,3]],"w":[45,45,45,35,35,35,17,17,17,3,3,3]},{"p":750,"o":[20,40,30,9,1],"z":[[77,0],[128,0],[179,0],[204,1],[306,1],[434,1],[510,2],[765,2],[1020,2],[1275,3],[2040,3],[3060,3],[6120,4],[12751,4],[25502,4]],"w":[20,20,20,40,40,40,30,30,30,9,9,9,1,1,1]},{"p":1350,"o":[5,25,40,25,5],"z":[[64,0],[96,0],[129,0],[161,1],[257,1],[386,1],[450,2],[643,2],[900,2],[1157,3],[1799,3],[2892,3],[4499,4],[7712,4],[16066,4]],"w":[5,5,5,25,25,25,40,40,40,25,25,25,5,5,5]},{"p":2250,"o":[0,10,30,40,20],"z":[[129,1],[194,1],[290,1],[323,2],[484,2],[710,2],[904,3],[1420,3],[2259,3],[3227,4],[5809,4],[11618,4]],"w":[10,10,10,30,30,30,40,40,40,20,20,20]}];   // p: fiyat · o: bant yüzdeleri · z: [ödül, bant] · w: ağırlık
 const CASE_GAP = 6000;
 function caseMsg(p, m, now) {
   const a = p.acct, c = p.conn;
@@ -1029,7 +1029,7 @@ function caseMsg(p, m, now) {
 }
 
 /* ---------- TOWERS: her katta güvenli kareyi seç, çarpan yüksel, istediğinde çek ---------- */
-const TW_FL = 8, TW_RTP = 0.96, TW_CAP = 1000;
+const TW_FL = 8, TW_RTP = 0.99, TW_CAP = 1000;      // %99 geri dönüş (Stake Towers/Dragon Tower ile aynı)
 const TW_MODES = { easy: [4, 1], medium: [3, 1], hard: [2, 1], extreme: [3, 2] };   // [kare sayısı, bomba sayısı]
 function twMult(d, k) { if (k <= 0) return 1; const n = TW_MODES[d][0], b = TW_MODES[d][1]; return Math.min(TW_CAP, Math.floor(TW_RTP * Math.pow(n / (n - b), k) * 100) / 100); }
 function twView(g, st, hit, pay, gold) {
@@ -1076,10 +1076,10 @@ function twAct(p, m, now) {
 }
 
 /* ---------- DICE: hedef şansı seç, üstü/altı, sonuç sunucuda ---------- */
-const DICE_RTP = 97;
+const DICE_RTP = 99;                    // %99 geri dönüş, şans 0,01–98 (Stake Dice ile aynı)
 function diceBet(p, m, now) {
   const a = p.acct, c = p.conn, bet = Math.floor(Number(m.a)), ch = Math.round(Number(m.c) * 100) / 100, o = m.o === 'over' ? 'over' : 'under';
-  if (!(bet >= 1 && bet <= MAX_BET) || !(ch >= 2 && ch <= 95)) return;
+  if (!(bet >= 1 && bet <= MAX_BET) || !(ch >= 0.01 && ch <= 98)) return;
   if (bet > a.gold) return c.send({ t: 'berr', c: 'poor', gold: a.gold });
   p.betT = now + 1200; p.holdUntil = now + 3000;
   const roll = crypto.randomInt(0, 10000), cI = Math.round(ch * 100);
