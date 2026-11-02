@@ -1315,7 +1315,7 @@ setInterval(() => { const now = Date.now(); if (now < RR.end) return; if (RR.ph 
  * Akış: oyuncu tutar+coin seçer (open) -> adrese gönderir, işlem numarasını (TXID) yazar (paid) -> owner kontrol edip onaylar (ok) -> coin yatar.
  */
 const COIN_RATE = 100, DEP_FEE = 0.02, DEP_MIN_C = +process.env.DEP_MIN_USD * 100 || 200, DEP_MAX_C = +process.env.DEP_MAX_USD * 100 || 50000, DEP_DAY_C = +process.env.DEP_DAY_USD * 100 || 100000;
-const CRYPTOS = [['TRX', 'TRON', 'TRON'], ['BTC', 'Bitcoin', 'Bitcoin'], ['ETH', 'Ethereum', 'ERC20'], ['BNB', 'BNB', 'BEP20'], ['USDT', 'Tether', 'ERC20'], ['LTC', 'Litecoin', 'Litecoin'], ['SOL', 'Solana', 'Solana'], ['XRP', 'XRP', 'XRP Ledger'], ['DOGE', 'Dogecoin', 'Dogecoin']];
+const CRYPTOS = [['TRX', 'TRON', 'TRON'], ['BTC', 'Bitcoin', 'Bitcoin'], ['ETH', 'Ethereum', 'ERC20'], ['BNB', 'BNB', 'BEP20'], ['USDT', 'Tether', 'ERC20'], ['USDTB', 'Tether', 'BEP20'], ['USDTS', 'Tether', 'Solana'], ['USDTP', 'Tether', 'Polygon'], ['LTC', 'Litecoin', 'Litecoin'], ['SOL', 'Solana', 'Solana'], ['XRP', 'XRP', 'XRP Ledger'], ['DOGE', 'Dogecoin', 'Dogecoin']];
 let WALLETS = {                      // varsayılan cüzdanlar (data/wallets.json ve PAY_WALLETS bunların üstüne yazar)
   TRX: { net: 'TRC20', addr: 'TVfEF8C74tL7DKqZxSTHjzqdrqS2Aumg9H' },
   BTC: { net: 'Bitcoin', addr: 'bc1q6nkysggv7zpaz0p7fydwdagu8kens29h9uagkj' },
@@ -1350,6 +1350,7 @@ const NP_ON = !!(NP_KEY && NP_SECRET && /^https?:\/\/[^\s/]+/.test(PUBLIC_URL));
 const NP_USDT = (process.env.NOWPAY_USDT || 'usdttrc20').toLowerCase();
 const NP_CUR = { TRX: ['trx', 'TRON'], BTC: ['btc', 'Bitcoin'], ETH: ['eth', 'ERC20'], BNB: ['bnbbsc', 'BEP20'],
   USDT: [NP_USDT, /erc20$/.test(NP_USDT) ? 'ERC20' : /bsc$|bep20$/.test(NP_USDT) ? 'BEP20' : 'TRC20'],
+  USDTB: ['usdtbsc', 'BEP20'], USDTS: ['usdtsol', 'Solana'], USDTP: ['usdtmatic', 'Polygon'],
   LTC: ['ltc', 'Litecoin'], SOL: ['sol', 'Solana'], XRP: ['xrp', 'XRP Ledger'], DOGE: ['doge', 'Dogecoin'] };
 async function npCall(method, p, body) {
   const r = await fetch(NP_API + p, { method, headers: { 'x-api-key': NP_KEY, 'Content-Type': 'application/json' },
@@ -1440,7 +1441,7 @@ function depMsg(p, m, now) {
   if (act === 'info') {
     return c.send({ t: 'dep', a: 'info', rate: COIN_RATE, fee: DEP_FEE * 100, min: DEP_MIN_C / 100, max: DEP_MAX_C / 100,
       auto: NP_ON ? 1 : 0,
-      coins: CRYPTOS.map(([id, name, net]) => NP_ON ? ({ id, name, net: NP_CUR[id] ? NP_CUR[id][1] : net, on: !!NP_CUR[id], min: NP_MIN[id] && Date.now() - NP_MIN[id].t < 36e5 ? NP_MIN[id].v : 0 }) : ({ id, name, net: (WALLETS[id] && WALLETS[id].net) || net, on: !!(WALLETS[id] && WALLETS[id].addr) })), list: mine() });
+      coins: CRYPTOS.filter(([id]) => NP_ON || !/^USDT[BSP]$/.test(id)).map(([id, name, net]) => NP_ON ? ({ id, sym: id.startsWith('USDT') ? 'USDT' : id, name, net: NP_CUR[id] ? NP_CUR[id][1] : net, on: !!NP_CUR[id], min: NP_MIN[id] && Date.now() - NP_MIN[id].t < 36e5 ? NP_MIN[id].v : 0 }) : ({ id, name, net: (WALLETS[id] && WALLETS[id].net) || net, on: !!(WALLETS[id] && WALLETS[id].addr) })), list: mine() });
   }
   if (act === 'req') {
     if (!m.age) return err('age');
