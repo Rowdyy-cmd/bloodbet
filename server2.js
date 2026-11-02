@@ -109,7 +109,7 @@ function wallT(ox, oz, dx, dz) {                     // ışının arena duvarı
 const RED = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
 const WHEEL = [0, .5, 0, 2, 0, .5, 0, 1.5, 0, .5, 0, 4, 0, .5, 0, 2, 0, .75, 0, 1, 0, .5, 0, 10];   // 24 dilim, geri dönüş ≈ %99
 const BET_KINDS = new Set(['n', 'red', 'black', 'odd', 'even', 'low', 'high', 'd1', 'd2', 'd3', 'c1', 'c2', 'c3']);
-const MAX_BET = 1e12, MAX_TOTAL = 1e12, BET_GAP = 3500, BIG_WIN = 3000;     // bahis üst sınırı yok (yalnızca bakiye ve taşma koruması)
+const MIN_BET = 10, MAX_BET = 1e12, MAX_TOTAL = 1e12, BET_GAP = 3500, BIG_WIN = 3000;     // bahis üst sınırı yok (yalnızca bakiye ve taşma koruması)
 const RK = 1;                          // Avrupa ruleti (tek sıfır): tek sayı 35:1, dış bahisler 1:1 → geri dönüş %97,3 (Stake ile aynı)
 function roulettePay(b, n) {
   let w = 0;
@@ -322,7 +322,7 @@ const REQ = {"c1":0,"c2":1,"c3":2,"c4":3,"c5":4,"c6":5,"c7":7,"c8":8,"c9":9,"c10
 const TIERS = [5000, 15000, 40000, 90000, 180000, 350000, 650000, 1100000, 1800000, 3000000];   // Tier 1..10 için gereken toplam wager
 const tierOf = w => { let t = 0; while (t < TIERS.length && w >= TIERS[t]) t++; return t; };
 const RB_RATES = [0.05, 0.052, 0.054, 0.056, 0.058, 0.06, 0.062, 0.064, 0.066, 0.068, 0.07];   // rank (-,I..X) -> kasa avantajından geri dönen pay
-const EDGE = { roul: 0.027, mines: 0.01, wof: 0.0104, bj: 0.011, case: 0.04, towers: 0.01, dice: 0.01, cf: 0.02, cfp: 0.05 };   // gerçek kasa avantajları (rakeback / affiliate bunun üzerinden hesaplanır)                                    // oyun başına kasa avantajı
+const EDGE = { roul: 0.027, mines: 0.01, wof: 0.0104, bj: 0.006, case: 0.04, towers: 0.01, dice: 0.01, cf: 0.02, cfp: 0.05 };   // gerçek kasa avantajları (rakeback / affiliate bunun üzerinden hesaplanır)                                    // oyun başına kasa avantajı
 // Haftalık bonus her pazartesi 06:00'da (TSİ), aylık bonus her ayın 1'inde 00:00'da (TSİ) yenilenir
 const BTZ = +process.env.DAY_TZ_H || 3, WK_HOUR = 6;
 const wkIdx = t => Math.floor(((t + (BTZ - WK_HOUR) * 36e5) / 864e5 + 3) / 7);                     // 1970-01-01 perşembe -> pazartesi tabanlı hafta no
@@ -886,13 +886,13 @@ function tblMsg(p, m, now) {                          // istemci: masaya oturdu 
     if (Array.isArray(m.bets)) for (const b of m.bets.slice(0, 24)) {
       if (!b || typeof b.k !== 'string' || !BET_KINDS.has(b.k)) continue;
       const a = Math.floor(Number(b.a)), vv = b.k === 'n' ? Math.floor(Number(b.v)) : 0;
-      if (!(a >= 1 && a <= MAX_BET) || (b.k === 'n' && !(vv >= 0 && vv <= 36))) continue;
+      if (!(a >= MIN_BET && a <= MAX_BET) || (b.k === 'n' && !(vv >= 0 && vv <= 36))) continue;
       bets.push({ k: b.k, v: vv, a });
     }
     v = { bets };
   } else if (m.g === 'wof') {
     const a = Math.floor(Number(m.a));
-    v = { a: a >= 1 && a <= MAX_BET ? a : 0 };
+    v = { a: a >= MIN_BET && a <= MAX_BET ? a : 0 };
   } else if (TBL[m.g] && TBL[m.g].id === p.id) return;   // bj / mines: durumu zaten sunucu gönderiyor
   p.tbg = m.g; p.tbv = v;
   tblSet(p, m.g, v);
@@ -904,59 +904,84 @@ function tx(p, o) {                                   // oyuncuya gönder + masa
   return o;
 }
 
+const bjCV = c => { const r = c % 13; return r === 0 ? 11 : r >= 9 ? 10 : r + 1; };      // kart değeri (As = 11)
+const bjTotal = h => h.hands.reduce((s, x) => s + x.bet, 0);
 function bjView(h, res, pay, gold) {
-  const over = !!res;
-  return { t: 'bjs', st: over ? 'done' : 'play', p: h.p.slice(), d: over ? h.d.slice() : [h.d[0]], res: res || '', bet: h.bet, pay: pay || 0, gold, dbl: !over && h.p.length === 2 && !h.dd };
+  const over = !!res, cur = h.hands[Math.min(h.cur, h.hands.length - 1)], hd = !over && cur.p.length === 2 && !cur.dd && !cur.done;
+  return { t: 'bjs', st: over ? 'done' : 'play', hands: h.hands.map(x => ({ p: x.p.slice(), bet: x.bet, res: x.res || '', pay: x.pay || 0, done: !!x.done })), cur: h.cur,
+    p: cur.p.slice(), d: over ? h.d.slice() : [h.d[0]], res: res || '', bet: bjTotal(h), pay: pay || 0, gold,
+    dbl: hd, spl: hd && h.hands.length === 1 && bjCV(cur.p[0]) === bjCV(cur.p[1]) };
 }
 function bjFinish(p, now, res, pay) {
-  const h = p.bj, a = p.acct;
+  const h = p.bj, a = p.acct, bet = bjTotal(h);
   a.gold += pay; p.gold = a.gold; p.rewT = now; p.holdUntil = now + 3000; p.bj = null; saveUsers();
   broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id);
-  if (pay - h.bet >= BIG_WIN) setTimeout(() => broadcast({ t: 'big', n: p.name, w: pay - h.bet, g: 'bj' }), 1200);
+  if (pay - bet >= BIG_WIN) setTimeout(() => broadcast({ t: 'big', n: p.name, w: pay - bet, g: 'bj' }), 1200);
   return bjView(h, res, pay, a.gold);
 }
-function bjStand(p, now) {
-  const h = p.bj, pv = bjVal(h.p).v;
-  for (; ;) { const dv = bjVal(h.d); if (dv.v < 17) h.d.push(bjDraw()); else break; }
-  const dv = bjVal(h.d).v;
-  if (dv > 21) return bjFinish(p, now, 'dbust', h.bet * 2);
-  if (pv > dv) return bjFinish(p, now, 'win', h.bet * 2);
-  if (pv < dv) return bjFinish(p, now, 'lose', 0);
-  return bjFinish(p, now, 'push', h.bet);
+function bjResolve(p, now) {            // tüm eller bitti (ya da bağlantı koptu): kasa oynar, eller sonuçlanır
+  const h = p.bj;
+  for (const x of h.hands) x.done = true;
+  if (h.hands.some(x => bjVal(x.p).v <= 21)) for (; ;) { const dv = bjVal(h.d); if (dv.v < 17) h.d.push(bjDraw()); else break; }   // kasa tüm 17'lerde durur
+  const dv = bjVal(h.d).v; let pay = 0;
+  for (const x of h.hands) {
+    const pv = bjVal(x.p).v;
+    if (pv > 21) { x.res = 'bust'; x.pay = 0; }
+    else if (dv > 21) { x.res = 'dbust'; x.pay = x.bet * 2; }
+    else if (pv > dv) { x.res = 'win'; x.pay = x.bet * 2; }
+    else if (pv < dv) { x.res = 'lose'; x.pay = 0; }
+    else { x.res = 'push'; x.pay = x.bet; }
+    pay += x.pay;
+  }
+  return bjFinish(p, now, h.hands.length > 1 ? 'split' : h.hands[0].res, pay);
+}
+const bjStand = bjResolve;
+function bjAdvance(p, now) {
+  const h = p.bj;
+  while (h.cur < h.hands.length && h.hands[h.cur].done) h.cur++;
+  if (h.cur >= h.hands.length) return bjResolve(p, now);
+  return bjView(h, '', 0, p.acct.gold);
 }
 function bjStart(p, m, now) {
   const a = p.acct, c = p.conn, bet = Math.floor(Number(m.a));
-  if (!(bet >= 1 && bet <= MAX_BET)) return;
+  if (!(bet >= MIN_BET && bet <= MAX_BET)) return;
   if (bet > a.gold) return c.send({ t: 'berr', c: 'poor', gold: a.gold });
   p.betT = now + BJ_GAP; p.holdUntil = now + 8000;
   a.gold -= bet; p.gold = a.gold; wagerAdd(a, bet, 'bj');
-  const h = { bet, p: [bjDraw(), bjDraw()], d: [bjDraw(), bjDraw()], dd: false };
+  const h = { hands: [{ p: [bjDraw(), bjDraw()], bet, dd: false, done: false }], d: [bjDraw(), bjDraw()], cur: 0 };
   p.bj = h; saveUsers();
-  const pn = bjVal(h.p).v === 21, dn = bjVal(h.d).v === 21;
-  if (pn && dn) return tx(p, bjFinish(p, now, 'push', bet));
-  if (pn) return tx(p, bjFinish(p, now, 'bj', Math.floor(bet * 2.5)));
-  if (dn) return tx(p, bjFinish(p, now, 'lose', 0));
+  const x = h.hands[0], pn = bjVal(x.p).v === 21, dn = bjVal(h.d).v === 21;
+  if (pn && dn) { x.res = 'push'; x.pay = bet; return tx(p, bjFinish(p, now, 'push', bet)); }
+  if (pn) { x.res = 'bj'; x.pay = Math.floor(bet * 2.5); return tx(p, bjFinish(p, now, 'bj', x.pay)); }
+  if (dn) { x.res = 'lose'; x.pay = 0; return tx(p, bjFinish(p, now, 'lose', 0)); }
   tx(p, bjView(h, '', 0, a.gold));
 }
 function bjAct(p, m, now) {
   const h = p.bj, c = p.conn, a = p.acct;
   if (!h) return c.send({ t: 'berr', c: 'nogame', gold: a.gold });
   p.holdUntil = now + 8000;
-  const act = m.a;
+  const x = h.hands[h.cur], act = m.a;
+  if (!x || x.done) return;
   if (act === 'hit') {
-    h.p.push(bjDraw()); const v = bjVal(h.p).v;
-    if (v > 21) return tx(p, bjFinish(p, now, 'bust', 0));
-    if (v === 21) return tx(p, bjStand(p, now));
-    return tx(p, bjView(h, '', 0, a.gold));
+    x.p.push(bjDraw()); if (bjVal(x.p).v >= 21) x.done = true;               // 21 ya da batma: el biter
+    return tx(p, bjAdvance(p, now));
   }
+  if (act === 'stand') { x.done = true; return tx(p, bjAdvance(p, now)); }
   if (act === 'double') {
-    if (h.p.length !== 2 || h.dd) return;
-    if (h.bet > a.gold) return c.send({ t: 'berr', c: 'poor', gold: a.gold });
-    a.gold -= h.bet; p.gold = a.gold; wagerAdd(a, h.bet, 'bj'); h.bet *= 2; h.dd = true; h.p.push(bjDraw());
-    if (bjVal(h.p).v > 21) return tx(p, bjFinish(p, now, 'bust', 0));
-    return tx(p, bjStand(p, now));
+    if (x.p.length !== 2 || x.dd) return;
+    if (x.bet > a.gold) return c.send({ t: 'berr', c: 'poor', gold: a.gold });
+    a.gold -= x.bet; p.gold = a.gold; wagerAdd(a, x.bet, 'bj'); x.bet *= 2; x.dd = true; x.p.push(bjDraw()); x.done = true;
+    return tx(p, bjAdvance(p, now));
   }
-  if (act === 'stand') return tx(p, bjStand(p, now));
+  if (act === 'split') {                                                      // aynı değerdeki iki kart, bir kez bölünebilir
+    if (h.hands.length !== 1 || x.p.length !== 2 || x.dd || bjCV(x.p[0]) !== bjCV(x.p[1])) return;
+    if (x.bet > a.gold) return c.send({ t: 'berr', c: 'poor', gold: a.gold });
+    a.gold -= x.bet; p.gold = a.gold; wagerAdd(a, x.bet, 'bj');
+    const aces = bjCV(x.p[0]) === 11, h1 = { p: [x.p[0], bjDraw()], bet: x.bet, dd: false, done: false }, h2 = { p: [x.p[1], bjDraw()], bet: x.bet, dd: false, done: false };
+    h.hands = [h1, h2]; h.cur = 0;
+    for (const q of [h1, h2]) if (aces || bjVal(q.p).v === 21) q.done = true;   // As bölünürse her ele tek kart; bölünmüş elde 21 blackjack sayılmaz
+    return tx(p, bjAdvance(p, now));
+  }
 }
 
 /* ---------- mines (sunucu hakemlidir) ---------- */
@@ -982,7 +1007,7 @@ function mnFinish(p, now, st, hit) {
 }
 function mnStart(p, m, now) {
   const a = p.acct, c = p.conn, bet = Math.floor(Number(m.a)), mc = Math.floor(Number(m.m));
-  if (!(bet >= 1 && bet <= MAX_BET) || !(mc >= 1 && mc <= 24)) return;
+  if (!(bet >= MIN_BET && bet <= MAX_BET) || !(mc >= 1 && mc <= 24)) return;
   if (bet > a.gold) return c.send({ t: 'berr', c: 'poor', gold: a.gold });
   p.betT = now + MN_GAP; p.holdUntil = now + 8000;
   a.gold -= bet; p.gold = a.gold; wagerAdd(a, bet, 'mines');
@@ -1047,7 +1072,7 @@ function twFinish(p, now, st, hit) {
 }
 function twStart(p, m, now) {
   const a = p.acct, c = p.conn, bet = Math.floor(Number(m.a)), d = String(m.d);
-  if (!(bet >= 1 && bet <= MAX_BET) || !TW_MODES[d]) return;
+  if (!(bet >= MIN_BET && bet <= MAX_BET) || !TW_MODES[d]) return;
   if (bet > a.gold) return c.send({ t: 'berr', c: 'poor', gold: a.gold });
   p.betT = now + MN_GAP; p.holdUntil = now + 8000;
   a.gold -= bet; p.gold = a.gold; wagerAdd(a, bet, 'towers');
@@ -1079,7 +1104,7 @@ function twAct(p, m, now) {
 const DICE_RTP = 99;                    // %99 geri dönüş, şans 0,01–98 (Stake Dice ile aynı)
 function diceBet(p, m, now) {
   const a = p.acct, c = p.conn, bet = Math.floor(Number(m.a)), ch = Math.round(Number(m.c) * 100) / 100, o = m.o === 'over' ? 'over' : 'under';
-  if (!(bet >= 1 && bet <= MAX_BET) || !(ch >= 0.01 && ch <= 98)) return;
+  if (!(bet >= MIN_BET && bet <= MAX_BET) || !(ch >= 0.01 && ch <= 98)) return;
   if (bet > a.gold) return c.send({ t: 'berr', c: 'poor', gold: a.gold });
   p.betT = now + 1200; p.holdUntil = now + 3000;
   const roll = crypto.randomInt(0, 10000), cI = Math.round(ch * 100);
@@ -1095,7 +1120,7 @@ function diceBet(p, m, now) {
 const CF_HOUSE = 1.96, CF_FEE = 0.05, CF_MAX_OPEN = 3, CF_TTL = 15 * 60000;
 function cfHouse(p, m, now) {
   const a = p.acct, c = p.conn, bet = Math.floor(Number(m.a)), side = m.s === 't' ? 't' : 'h';
-  if (!(bet >= 1 && bet <= MAX_BET)) return;
+  if (!(bet >= MIN_BET && bet <= MAX_BET)) return;
   if (bet > a.gold) return c.send({ t: 'berr', c: 'poor', gold: a.gold });
   p.betT = now + 1500; p.holdUntil = now + 3500;
   const res = crypto.randomInt(2) ? 't' : 'h', win = res === side, pay = win ? Math.floor(bet * CF_HOUSE) : 0;
@@ -1121,7 +1146,7 @@ function cfMsg(p, m, now) {
   p.cfT = now + 800;
   if (m.a === 'create') {
     const bet = Math.floor(Number(m.bet)), side = m.side === 't' ? 't' : 'h';
-    if (!(bet >= 1 && bet <= MAX_BET)) return;
+    if (!(bet >= MIN_BET && bet <= MAX_BET)) return;
     if (bet > a.gold) return c.send({ t: 'cferr', c: 'poor', gold: a.gold });
     if ([...CF.values()].filter(e => e.pid === p.id).length >= CF_MAX_OPEN || CF.size >= 60) return c.send({ t: 'cferr', c: 'many' });
     a.gold -= bet; p.gold = a.gold; p.holdUntil = now + 4000; saveUsers();                // bahis emanete alınır
@@ -1193,7 +1218,7 @@ function doBet(p, m, now) {
     for (const b of m.bets) {
       if (!b || typeof b.k !== 'string' || !BET_KINDS.has(b.k)) return;
       const amt = Math.floor(Number(b.a));
-      if (!(amt >= 1 && amt <= MAX_BET)) return;
+      if (!(amt >= MIN_BET && amt <= MAX_BET)) return;
       const v = b.k === 'n' ? Math.floor(Number(b.v)) : 0;
       if (b.k === 'n' && !(v >= 0 && v <= 36)) return;
       bets.push({ k: b.k, v, a: amt }); total += amt;
@@ -1201,7 +1226,7 @@ function doBet(p, m, now) {
     if (total > MAX_TOTAL) return;
   } else if (m.g === 'wof') {
     total = Math.floor(Number(m.a));
-    if (!(total >= 1 && total <= MAX_BET)) return;
+    if (!(total >= MIN_BET && total <= MAX_BET)) return;
   } else return;
   if (total > a.gold) return c.send({ t: 'berr', c: 'poor', gold: a.gold });
   p.betT = now + BET_GAP; p.holdUntil = now + 6000;
@@ -1245,7 +1270,7 @@ function rrBets(p, m, now) {
   for (const b of m.bets) {
     if (!b || typeof b.k !== 'string' || !BET_KINDS.has(b.k)) return;
     const amt = Math.floor(Number(b.a));
-    if (!(amt >= 1 && amt <= MAX_BET)) return;
+    if (!(amt >= MIN_BET && amt <= MAX_BET)) return;
     const v = b.k === 'n' ? Math.floor(Number(b.v)) : 0;
     if (b.k === 'n' && !(v >= 0 && v <= 36)) return;
     bets.push({ k: b.k, v, a: amt }); total += amt;
