@@ -1593,6 +1593,7 @@ async function npCall(method, p, body) {
   if (!r.ok) { const e = new Error('NOWPayments ' + r.status + ' ' + txt.slice(0, 200)); e.np = j && j.code; throw e; }
   return j;
 }
+const npRound = f => Math.ceil(f * 1.03 * 10) / 10;   // minimuma %3 pay, 0,1 dolara yukarı yuvarla (9,08 -> 9,4)
 const NP_MIN = {};                       // coin -> minimum yatırım (USD), 1 saat geçerli
 // bir coinin gerçek minimumu (USD): önce çıkış cüzdanı çiftiyle (NOWPAY_OUT), olmazsa çiftsiz, en son eski yöntemle
 async function npMinOf(c) {
@@ -1609,7 +1610,7 @@ async function npMinOf(c) {
 async function npMinRefresh() {          // her coinin güncel minimumunu öğren, oyuncuya butonda göster
   const seen = {};
   for (const [id, np] of Object.entries(NP_CUR)) {
-    try { const f = await npMinOf(np[0]); NP_MIN[id] = { v: Math.ceil(f + 0.5), t: Date.now() }; seen[id] = NP_MIN[id].v; }
+    try { const f = await npMinOf(np[0]); NP_MIN[id] = { v: npRound(f), t: Date.now() }; seen[id] = NP_MIN[id].v; }
     catch (e) { log('minimum sorgusu başarısız', id, String(e.message).slice(0, 120)); }
   }
   log('NOWPayments minimumları (USD' + (NP_OUT ? ', çıkış: ' + NP_OUT : ', çıkış coini NOWPAY_OUT ayarlı değil') + '):', JSON.stringify(seen));
@@ -1722,7 +1723,7 @@ function depMsg(p, m, now) {
           log('NOWPayments hatası:', e.message);
           if (e.np !== 'AMOUNT_MINIMAL_ERROR') return c.send({ t: 'dep', a: 'err', c: 'gw', m: String(e.message).slice(0, 160) });
           let v = 0;                                   // gerçek minimumu (USD) öğrenip oyuncuya göster
-          try { v = Math.ceil(await npMinOf(np[0]) + 0.5) || 0; } catch (x) { log('minimum sorgusu başarısız:', x.message); }
+          try { v = npRound(await npMinOf(np[0])) || 0; } catch (x) { log('minimum sorgusu başarısız:', x.message); }
           if (v > usdC / 100) NP_MIN[cr[0]] = { v, t: Date.now() };
           c.send({ t: 'dep', a: 'err', c: 'min', v: v > usdC / 100 ? v : 0 });
         })
