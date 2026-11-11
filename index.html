@@ -324,6 +324,15 @@ h1,h2{font-family:var(--fd,"Segoe UI",sans-serif);letter-spacing:.4px}
 #inp{-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);transition:border-color .15s,box-shadow .15s}#inp:focus{border-color:var(--red);box-shadow:0 0 0 3px rgba(224,86,107,.18)}
 #prompt{background:linear-gradient(180deg,rgba(44,24,32,.95),rgba(26,14,19,.95));box-shadow:0 10px 34px rgba(224,86,107,.28),inset 0 1px 0 rgba(255,255,255,.08);animation:boxin .2s ease}
 #hint{text-shadow:0 1px 3px #000}
+#dpn{position:fixed;right:calc(env(safe-area-inset-right,0px) + 14px);bottom:calc(env(safe-area-inset-bottom,0px) + 96px);z-index:9;display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}
+#dpn .dn{display:flex;align-items:center;gap:12px;min-width:190px;max-width:min(320px,86vw);padding:8px 12px;background:rgba(14,7,10,.94);border:1px solid rgba(255,211,107,.55);border-left:4px solid var(--gold,#ffd36b);border-radius:0;box-shadow:0 6px 18px rgba(0,0,0,.55);font-family:var(--fd);animation:dnin .35s ease-out}
+#dpn .dn small{display:block;font:700 9px var(--fd);letter-spacing:1.2px;text-transform:uppercase;color:var(--gold,#ffd36b);opacity:.85}
+#dpn .dn b{display:block;font:700 14px var(--fd);color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px}
+#dpn .dn i{margin-left:auto;font:700 17px var(--fd);font-style:normal;color:#8ef0a8;white-space:nowrap}
+#dpn .dn.out{opacity:0;transform:translateX(24px);transition:opacity .4s,transform .4s}
+@keyframes dnin{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:none}}
+body.mob #dpn{bottom:calc(env(safe-area-inset-bottom,0px) + 236px)}
+body.hubon #dpn{bottom:calc(env(safe-area-inset-bottom,0px) + 74px)}
 .bjt{box-shadow:inset 0 0 50px rgba(0,0,0,.55),0 10px 26px rgba(0,0,0,.45)}
 #cross{box-shadow:0 0 0 1px rgba(0,0,0,.55),0 0 8px rgba(255,255,255,.35)}
 
@@ -542,6 +551,7 @@ Object.assign(LG.tr,{ac_id:'Kullanıcı adı veya e-posta',ac_mail:'E-posta adre
 Object.assign(LG.tr,{vc_fail:'Sesli sohbet bağlantısı kurulamadı. Ağın doğrudan bağlantıya izin vermiyor olabilir (sunucuya TURN eklenmesi gerekebilir).'});Object.assign(LG.en,{vc_fail:'Voice chat could not connect. Your network may block direct connections (the server may need a TURN server).'});
 Object.assign(LG.tr,{m_rot:'Daha rahat oynamak için telefonu yatay çevir'});Object.assign(LG.en,{m_rot:'Rotate your phone to landscape for a better experience'});
 Object.assign(LG.tr,{dp_cheap:'★ = en düşük minimum yatırım. Küçük tutarlarda ★ işaretli coini seç; Bitcoin, Ethereum ve USDT gibi ağ ücreti yüksek coinlerin minimumu daha yüksektir.',dp_sugg:'Bu tutar için {c} kullanabilirsin (min. ≈ ${m}). Bu coini seç',dp_nomin:'Bu coin için minimum ≈ ${m}. En düşük tutar ≈ ${l} ({c}).'});Object.assign(LG.en,{dp_cheap:'★ = lowest minimum deposit. For small amounts pick the ★ coin; coins with high network fees such as Bitcoin, Ethereum and USDT have higher minimums.',dp_sugg:'You can pay this amount with {c} (min. ≈ ${m}). Use this coin',dp_nomin:'Minimum for this coin is ≈ ${m}. Lowest possible is ≈ ${l} ({c}).'});
+Object.assign(LG.tr,{dpn_t:'Yatırım'});Object.assign(LG.en,{dpn_t:'Deposit'});
 Object.assign(LG.tr,{betph:'Bahis (min 10)',bjsplit:'Böl',bj_split:'Eller: {r} · Toplam ödeme: {w}',bj_h_win:'Kazandı',bj_h_lose:'Kaybetti',bj_h_push:'Berabere',bj_h_bust:'Battı',bj_h_dbust:'Kasa battı',bjrule:'Blackjack 3:2 öder · Kasa yumuşak 17de de kart çeker · Aynı değerdeki iki kart bir kez bölünebilir (As\'a tek kart verilir, bölünmüş elde 21 blackjack sayılmaz) · Bölmeden sonra iki katlama serbest · Sigorta yok. Geri dönüş ≈ %99,2. Coin yalnızca oyun içinde kullanılır.'});Object.assign(LG.en,{betph:'Bet (min 10)',bjsplit:'Split',bj_split:'Hands: {r} · Total payout: {w}',bj_h_win:'Won',bj_h_lose:'Lost',bj_h_push:'Push',bj_h_bust:'Bust',bj_h_dbust:'Dealer bust',bjrule:'Blackjack pays 3:2 · Dealer hits soft 17 · Two cards of equal value can be split once (split aces get one card, 21 after a split is not blackjack) · Double after split allowed · No insurance. Return about 99.2%. Coins are for in-game use only.'});
 Object.assign(LG.tr,{mnrule:'Her güvenli karede çarpan artar (%3,5 kasa payı, geri dönüş %96,5), en fazla x1000. Coin yalnızca oyun içinde kullanılır, gerçek paraya çevrilemez.',rrule:'Avrupa ruleti (tek sıfır, geri dönüş ≈ %94,9): tek sayı 34,1:1 · renk, tek/çift, 1-18/19-36 0,95:1 · düzine ve sütun 1,92:1 · sıfır dış bahisleri kaybettirir. Coin yalnızca oyun içinde kullanılır.',twrule:'Her güvenli katta çarpan artar. Bomba seçersen bahsin yanar. Geri dönüş %97.',dcrule:'0–99,99 arası bir sayı düşer. Şansı düşürdükçe çarpan artar (%0,01 şansta x9800). Geri dönüş %98.',odds3:'Ödüller coin olarak anında hesabına yatar. Kasaların toplam geri dönüşü yaklaşık %96\'dır.'});Object.assign(LG.en,{mnrule:'Each safe tile raises the multiplier (3.5% house edge, 96.5% return), max x1000. Coins are for in-game use only and cannot be cashed out.',rrule:'European roulette (single zero, about 94.9% return): straight 34.1:1 · colour, odd/even, 1-18/19-36 0.95:1 · dozens and columns 1.92:1 · zero loses outside bets. Coins are for in-game use only.',twrule:'The multiplier rises on every safe floor. Hit a bomb and you lose the bet. Return 97%.',dcrule:'A number from 0 to 99.99 is rolled. Lower chance means a higher multiplier (x9800 at 0.01%). Return 98%.',odds3:'Prizes are credited as coins instantly. Crates return about 96% overall.'});
 Object.assign(LG.tr,{tr_noitems:'Eşyalar rank ile açıldığı için takas edilemez; sadece coin takas edebilirsin.',pick:'Bir kasa seç. Kasadan coin çıkar; kasa ne kadar pahalıysa büyük ödül şansı o kadar yüksek.',cready:'Bir kasa aç, coin kazan.'});Object.assign(LG.en,{tr_noitems:'Items unlock by rank and cannot be traded; you can trade coins only.',pick:'Pick a crate. Crates pay out coins; the pricier the crate, the better the chance of a big prize.',cready:'Open a crate and win coins.'});
@@ -1855,6 +1865,7 @@ function netMsg(m){switch(m.t){
  case 'pfu':pfApply(m.pf);pfuMsg(m);break;
  case 'tr':trNet(m);break;
  case 'dep':depNet(m);break;
+ case 'dpn':depToast(m);break;
  case 'rw':rwNet(m);break;
  case 'gw':gwNet(m);break;
  case 'rng':rngNet(m);break;
@@ -2392,6 +2403,15 @@ function depNet(m){switch(m.a){case 'info':DEP.info=m;DEP.list=m.list||[];break;
  case 'olist':DEP.o=m.list||[];break;case 'new':DEP.o=(DEP.o||[]).filter(function(x){return x.id!==m.d.id}).concat([m.d]);add(L('sys'),L('dp_new',{n:m.d.name}),true);break}
  if(modal==='dep')renderDep();if(modal==='admin')renderAdmin()}
 function usdF(c){return (c/100).toFixed(2)}
+/* yatırım bildirimi: herkese sağ altta köşesiz kutu + para sesi */
+function depSnd(){try{if(!AC)return;[1318,1760,2349].forEach(function(f,i){setTimeout(function(){tone(f,f*1.004,.45,'sine',.2)},i*85)});
+ for(var k=0;k<5;k++)(function(k){setTimeout(function(){var f=2800+Math.random()*1800;tone(f,f*.92,.07,'square',.045)},300+k*70+Math.random()*30)})(k)}catch(e){}}
+function depToast(m){var h=$('dpn');if(!h){h=document.createElement('div');h.id='dpn';document.body.appendChild(h)}
+ var u=Number(m.usd);if(!(u>0)||!m.n)return;var d=document.createElement('div');d.className='dn';
+ var l=document.createElement('div'),s=document.createElement('small'),b=document.createElement('b'),a=document.createElement('i');
+ s.textContent=L('dpn_t');b.textContent=String(m.n).slice(0,24);a.textContent='+$'+(u%1?u.toFixed(2):u);l.appendChild(s);l.appendChild(b);d.appendChild(l);d.appendChild(a);
+ h.appendChild(d);while(h.children.length>4)h.removeChild(h.firstChild);depSnd();
+ setTimeout(function(){d.classList.add('out');setTimeout(function(){if(d.parentNode)d.parentNode.removeChild(d)},450)},6500)}
 function depCalc(){var c=Math.round(parseFloat(String(DEP.usd).replace(',','.'))*100)||0,g=Math.floor(c*.98);return{c:c,g:g,f:c-g}}
 function csym(id){return /^USDT[BSP]$/.test(id)?'USDT':id}
 function renderDep(){var bx=$('depbox'),st=bx.scrollTop;bx.innerHTML='';var hd=el('div','head');hd.appendChild(el('h2','',L('dp_t')));var gp=el('div','pill gp');gp.innerHTML=CIC+'<b>'+fm(pf.gold)+'</b>';hd.appendChild(gp);bx.appendChild(hd);

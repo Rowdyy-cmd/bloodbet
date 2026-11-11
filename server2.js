@@ -676,6 +676,7 @@ function uniqueName(base) {
 }
 function setRole(p, role) {
   p.role = role;
+  if (role && p.acct && p.acct.stf !== role) { p.acct.stf = role; saveUsers(); }     // yetkili hesap kalıcı işaretlenir: çevrimdışıyken de leaderboard'a girmez
   p.conn.send({ t: 'role', r: role });
   broadcast({ t: 'prole', id: p.id, r: role }, p.id);
 }
@@ -711,11 +712,13 @@ let hubCache = null, hubCacheT = 0;
 function hubBoards() {
   const now = Date.now();
   if (hubCache && now - hubCacheT < 8000) return hubCache;
-  const all = Object.values(users), refs = Object.create(null);
+  const all = Object.values(users), refs = Object.create(null), staffOn = new Set();
+  for (const q of players.values()) if (q.role === 'admin' || q.role === 'owner') staffOn.add(q.acct);
+  const isStaff = u => !!u && (!!u.stf || staffOn.has(u));       // admin / owner leaderboard'a hiç girmez
   for (const u of all) if (u.ref) { const r = refs[u.ref] || (refs[u.ref] = { n: 0, w: 0, c: 0 }); r.n++; r.w += u.affW || 0; r.c += u.affC || 0; }
-  const wag = all.filter(u => (u.wag || 0) > 0).sort((a, b) => (b.wag || 0) - (a.wag || 0)).slice(0, 10).map(u => ({ n: u.name, w: Math.floor(u.wag || 0), tr: tierOf(u.wag || 0) }));
-  const rich = all.filter(u => (u.gold || 0) > 0).sort((a, b) => (b.gold || 0) - (a.gold || 0)).slice(0, 10).map(u => ({ n: u.name, g: Math.floor(u.gold || 0), tr: tierOf(u.wag || 0) }));
-  const aff = Object.keys(refs).filter(k => users[k]).sort((a, b) => refs[b].c - refs[a].c || refs[b].n - refs[a].n).slice(0, 10).map(k => ({ n: users[k].name, r: refs[k].n, w: Math.floor(refs[k].w), c: Math.floor(refs[k].c) }));
+  const wag = all.filter(u => !isStaff(u) && (u.wag || 0) > 0).sort((a, b) => (b.wag || 0) - (a.wag || 0)).slice(0, 10).map(u => ({ n: u.name, w: Math.floor(u.wag || 0), tr: tierOf(u.wag || 0) }));
+  const rich = all.filter(u => !isStaff(u) && (u.gold || 0) > 0).sort((a, b) => (b.gold || 0) - (a.gold || 0)).slice(0, 10).map(u => ({ n: u.name, g: Math.floor(u.gold || 0), tr: tierOf(u.wag || 0) }));
+  const aff = Object.keys(refs).filter(k => users[k] && !isStaff(users[k])).sort((a, b) => refs[b].c - refs[a].c || refs[b].n - refs[a].n).slice(0, 10).map(k => ({ n: users[k].name, r: refs[k].n, w: Math.floor(refs[k].w), c: Math.floor(refs[k].c) }));
   hubCache = { wag, rich, aff, total: all.length }; hubCacheT = now;
   return hubCache;
 }
@@ -1610,6 +1613,7 @@ function depCredit(d, coins, by) {     // yatırımı hesaba işler (tek seferli
   const q = onlineAcct(t);
   if (q) { q.gold = t.gold; pfSync(q, { m: 'depok', n: coins }); broadcast({ t: 'me', id: q.id, eq: q.eq, gold: q.gold }, q.id); q.conn.send({ t: 'dep', a: 'mine', list: depMineOf(d.key) }); }
   ownersCast({ t: 'dep', a: 'olist', list: depOList() });
+  broadcast({ t: 'dpn', n: t.name, usd: Math.round(d.usdC * coins / full) / 100 });      // herkese: "X yatırım yaptı" bildirimi (sağ alt) + para sesi
   return true;
 }
 // NOWPayments'tan gelen (IPN ya da sorgu) ödeme durumunu işler
@@ -2019,6 +2023,7 @@ function adminAction(p, m, now) {
     const r = m.r === 'admin' ? 'admin' : '';
     if (r === target.role) return;
     setRole(target, r);
+    if (!r && target.acct) { delete target.acct.stf; saveUsers(); }           // adminlik alınınca leaderboard'a dönebilir
     return broadcast({ t: 'evt', e: r ? 'prom' : 'dem', n: target.name });
   }
   if (me <= tr) return p.conn.send({ t: 'err', c: 'rank' });
@@ -2157,6 +2162,30 @@ setInterval(() => {
 
 function log(...a) { console.log(new Date().toISOString().slice(11, 19), ...a); }
 
+/* ---------- tek seferlik bakiye sıfırlama: herkesin bakiyesi GOLD_RESET_TO (100) coin olur ----------
+ * GOLD_RESET_ID değişmedikçe bir daha çalışmaz (işaret dosyada / veritabanında tutulur). Çalışmadan önce yedek alınır.
+ * NO_GOLD_RESET=1 ile tamamen kapatılabilir. */
+const GOLD_RESET_ID = 'reset-2026-11-11', GOLD_RESET_TO = 100;
+async function goldResetOnce() {
+  if (process.env.NO_GOLD_RESET === '1') return log('Bakiye sıfırlama kapalı (NO_GOLD_RESET=1)');
+  const META = path.join(DATA_DIR, 'meta.json');
+  let done = {};
+  try { done = REMOTE ? (JSON.parse(await redis(['GET', 'bloodbet:resets']) || '{}') || {}) : (JSON.parse(fs.readFileSync(META, 'utf8')) || {}); } catch (e) { if (REMOTE) throw e; }
+  if (done[GOLD_RESET_ID]) return;
+  const bak = {}; let before = 0, n = 0;
+  for (const k in users) { const u = users[k]; bak[k] = { gold: u.gold || 0, btEsc: u.btEsc || 0, rb: u.rb || 0 }; before += (u.gold || 0) + (u.btEsc || 0); n++; }
+  try { fs.writeFileSync(path.join(DATA_DIR, 'yedek-' + GOLD_RESET_ID + '.json'), JSON.stringify(bak)); } catch (e) { log('yedek dosyası yazılamadı:', e.message); }
+  if (REMOTE) await redis(['SET', 'bloodbet:backup:' + GOLD_RESET_ID, JSON.stringify(bak)]);
+  const now = Date.now();
+  for (const k in users) { const u = users[k]; u.gold = GOLD_RESET_TO; u.btEsc = 0; u.rb = 0; u.bud = 0; u.budT = now; }
+  for (const id of Object.keys(gws)) delete gws[id];            // emanetteki çekilişler iade etmesin: hepsi iptal
+  gwSave();
+  if (REMOTE) await flushRemote(); else { writeUsers(); }
+  done[GOLD_RESET_ID] = now;
+  if (REMOTE) await redis(['SET', 'bloodbet:resets', JSON.stringify(done)]); else fs.writeFileSync(META, JSON.stringify(done));
+  log(`BAKİYE SIFIRLANDI: ${n} hesap → ${GOLD_RESET_TO} coin (önceki toplam ${Math.round(before)} coin; yedek: yedek-${GOLD_RESET_ID}.json)`);
+}
+
 if (require.main === module) {
   const start = () => server.listen(PORT, HOST, () => {
     log(`BloodBet sunucusu http://localhost:${PORT} adresinde (WebSocket: /ws)`);
@@ -2171,7 +2200,7 @@ if (require.main === module) {
   if (REMOTE) {            // hesaplar yüklenmeden kimse alınmaz (yoksa var olan isimler yeniden kaydedilebilir)
     (async () => {
       for (let i = 1; ; i++) {
-        try { await loadRemote(); return start(); }
+        try { await loadRemote(); await goldResetOnce(); return start(); }
         catch (e) {
           log(`veritabanına bağlanılamadı (${i}/5):`, e.message);
           if (i >= 5) { log('UPSTASH_REDIS_REST_URL ve UPSTASH_REDIS_REST_TOKEN değerlerini kontrol et.'); process.exit(1); }
@@ -2179,7 +2208,7 @@ if (require.main === module) {
         }
       }
     })();
-  } else start();
+  } else { goldResetOnce().catch(e => { log('bakiye sıfırlama hatası:', e.message); process.exit(1); }).then(start); }
   const stop = () => {
     setTimeout(() => process.exit(0), 8000).unref();
     saveUsers(true).finally(() => { for (const c of conns) c.close(1001); server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 1500).unref(); });
