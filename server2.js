@@ -1720,7 +1720,7 @@ function depMsg(p, m, now) {
         })
         .catch(async e => {
           log('NOWPayments hatası:', e.message);
-          if (e.np !== 'AMOUNT_MINIMAL_ERROR') return err('gw');
+          if (e.np !== 'AMOUNT_MINIMAL_ERROR') return c.send({ t: 'dep', a: 'err', c: 'gw', m: String(e.message).slice(0, 160) });
           let v = 0;                                   // gerçek minimumu (USD) öğrenip oyuncuya göster
           try { v = Math.ceil(await npMinOf(np[0]) + 0.5) || 0; } catch (x) { log('minimum sorgusu başarısız:', x.message); }
           if (v > usdC / 100) NP_MIN[cr[0]] = { v, t: Date.now() };

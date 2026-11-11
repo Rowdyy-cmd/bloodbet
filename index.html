@@ -2435,7 +2435,7 @@ setInterval(function(){if(modal==='plist')tipManyUpd()},1000);$('tipamt').oninpu
 function tipSend(q){var n=parseInt($('tipamt').value,10)||0;if(n<1||n>pf.gold){add(L('sys'),L('ptipbad'),true);return}netSend({t:'tip',id:q.id,a:n})}
 $('plclose').onclick=closeModal;
 var DEP={info:null,list:[],open:'',coin:'USDT',usd:'10',age:false,err:'',o:null,oAsk:false};
-function depNet(m){switch(m.a){case 'info':DEP.info=m;DEP.list=m.list||[];break;case 'made':DEP.list=m.list||[];DEP.open=m.d.id;DEP.err='';break;case 'mine':DEP.list=m.list||[];break;case 'err':DEP.err=L('dp_e_'+m.c,{v:m.v?' (≈ $'+m.v+')':''})+(m.c==='amt'&&m.mn!=null?' ($'+m.mn+' – $'+m.mx+')':'');break;
+function depNet(m){switch(m.a){case 'info':DEP.info=m;DEP.list=m.list||[];break;case 'made':DEP.list=m.list||[];DEP.open=m.d.id;DEP.err='';break;case 'mine':DEP.list=m.list||[];break;case 'err':DEP.err=L('dp_e_'+m.c,{v:m.v?' (≈ $'+m.v+')':''})+(m.c==='amt'&&m.mn!=null?' ($'+m.mn+' – $'+m.mx+')':'')+(m.c==='gw'&&m.m?' ['+m.m+']':'');break;
  case 'olist':DEP.o=m.list||[];break;case 'new':DEP.o=(DEP.o||[]).filter(function(x){return x.id!==m.d.id}).concat([m.d]);add(L('sys'),L('dp_new',{n:m.d.name}),true);break}
  if(modal==='dep')renderDep();if(modal==='admin')renderAdmin()}
 function usdF(c){return (c/100).toFixed(2)}
