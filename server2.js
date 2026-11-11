@@ -24,6 +24,7 @@
  *   AFF_WAG_SHARE    affiliate: davetlinin bahislerindeki kasa avantajının davet edene giden payı (0-0.5, varsayılan 0.10)
  *   NOWPAY_API_KEY / NOWPAY_IPN_SECRET / PUBLIC_URL   NOWPayments ile kişiye özel adres + otomatik coin yatırma (isteğe bağlı; yoksa elle onay)
  *   NOWPAY_USDT      USDT ağı (varsayılan usdttrc20)
+ *   LB_HIDE          leaderboard'dan gizlenecek hesap adları, virgülle (varsayılan: bloodbet,rowdyy,owner1). Yetki koduyla girenler zaten otomatik gizlenir
  *   NOWPAY_OUT       NOWPayments panelindeki ÇIKIŞ cüzdanı coin(ler)i, öncelik sırasıyla: trx  ya da  trx,ltc  (minimumları doğru hesaplamak için)
  *   PASSIVE_SEC      pasif gelir: kaç saniye aktif hareket = 1 coin (varsayılan 300); PASSIVE_WIN_MS ölçüm penceresi (varsayılan 60000)
  *   TRUST_PROXY=1    Cloudflare gibi herkese açık bir proxy arkasındaysan X-Forwarded-For kullan
@@ -290,7 +291,7 @@ async function loadRemote() {
   for (let i = 0; i + 1 < res.length; i += 2) {
     try { users[res[i]] = JSON.parse(res[i + 1]); lastSaved[res[i]] = res[i + 1]; } catch (e) { }
   }
-  await loadDepsRemote(); await loadGwRemote();
+  await loadDepsRemote(); await loadGwRemote(); await loadLogsRemote();
   log('veritabanından', Object.keys(users).length, 'hesap yüklendi');
 }
 async function flushRemote() {              // sadece değişen hesapları yazar
@@ -314,6 +315,23 @@ function saveUsers(now) {
   if (saveT) return;
   saveT = setTimeout(() => { saveT = null; writeUsers(); }, REMOTE ? 15000 : 3000);
 }
+/* ---------- yönetim günlüğü: altın verme / alma, yatırımlar (son 1000 kayıt, kalıcı) ---------- */
+const LOGS_FILE = path.join(DATA_DIR, 'logs.json'); let LOGS = [], logT = null;
+try { LOGS = JSON.parse(fs.readFileSync(LOGS_FILE, 'utf8')) || []; } catch (e) { }
+function logSave() {
+  if (logT) return;
+  logT = setTimeout(() => {
+    logT = null;
+    if (REMOTE) redis(['SET', 'bloodbet:logs', JSON.stringify(LOGS)]).catch(e => log('günlük kayıt hatası:', e.message));
+    else { try { const tmp = LOGS_FILE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(LOGS)); fs.renameSync(tmp, LOGS_FILE); } catch (e) { log('günlük kayıt hatası:', e.message); } }
+  }, 2000);
+}
+function logAdd(k, by, to, n, extra) {      // k: give | take | dep | reset
+  LOGS.push(Object.assign({ t: Date.now(), k, by: String(by || ''), to: String(to || ''), n: Math.round((Number(n) || 0) * 100) / 100 }, extra || {}));
+  if (LOGS.length > 1000) LOGS.splice(0, LOGS.length - 1000);
+  logSave();
+}
+async function loadLogsRemote() { const r = await redis(['GET', 'bloodbet:logs']); if (r) { try { LOGS = JSON.parse(r) || []; } catch (e) { } } }
 const NAME_RE = /^[\p{L}\p{N}_.-]+(?: [\p{L}\p{N}_.-]+)*$/u;
 const RESERVED = new Set(['admin', 'owner', 'system', 'sistem', 'lobi', 'mod', 'moderator', 'yönetici', 'yonetici', 'oyuncu']);
 const validName = n => n.length >= 2 && n.length <= 14 && NAME_RE.test(n) && !RESERVED.has(n.toLowerCase());
@@ -709,12 +727,13 @@ const hubWatch = new Set();          // hub ekranında olan bağlantılar
 function chatPush(name, role, msg) { CHAT_LOG.push({ n: name, r: role || '', m: msg, t: Date.now() }); if (CHAT_LOG.length > 60) CHAT_LOG.shift(); }
 function hubCast(obj) { for (const c of hubWatch) { try { c.send(obj, true); } catch (e) { } } }
 let hubCache = null, hubCacheT = 0;
+const LB_HIDE = new Set((process.env.LB_HIDE !== undefined ? process.env.LB_HIDE : 'bloodbet,rowdyy,owner1').toLowerCase().split(/\s*,\s*/).filter(Boolean));   // leaderboard'da hiç görünmeyecek hesaplar (yönetim hesapları)
 function hubBoards() {
   const now = Date.now();
   if (hubCache && now - hubCacheT < 8000) return hubCache;
   const all = Object.values(users), refs = Object.create(null), staffOn = new Set();
   for (const q of players.values()) if (q.role === 'admin' || q.role === 'owner') staffOn.add(q.acct);
-  const isStaff = u => !!u && (!!u.stf || staffOn.has(u));       // admin / owner leaderboard'a hiç girmez
+  const isStaff = u => !!u && (!!u.stf || staffOn.has(u) || LB_HIDE.has(String(u.name || '').toLowerCase()));       // admin / owner leaderboard'a hiç girmez
   for (const u of all) if (u.ref) { const r = refs[u.ref] || (refs[u.ref] = { n: 0, w: 0, c: 0 }); r.n++; r.w += u.affW || 0; r.c += u.affC || 0; }
   const wag = all.filter(u => !isStaff(u) && (u.wag || 0) > 0).sort((a, b) => (b.wag || 0) - (a.wag || 0)).slice(0, 10).map(u => ({ n: u.name, w: Math.floor(u.wag || 0), tr: tierOf(u.wag || 0) }));
   const rich = all.filter(u => !isStaff(u) && (u.gold || 0) > 0).sort((a, b) => (b.gold || 0) - (a.gold || 0)).slice(0, 10).map(u => ({ n: u.name, g: Math.floor(u.gold || 0), tr: tierOf(u.wag || 0) }));
@@ -807,6 +826,7 @@ function onMsg(c, txt) {
     case 'dep': return depMsg(p, m, now);
     case 'rw': return rwMsg(p, m, now);
     case 'rng': return rngMsg(p, m, now);
+    case 'dw': return dwMsg(p, m, now);
     case 'gw': return gwMsg(p, m, now);
     case 'tr': return trMsg(p, m, now);
     case 'bj': return bjAct(p, m, now);
@@ -1613,6 +1633,7 @@ function depCredit(d, coins, by) {     // yatırımı hesaba işler (tek seferli
   const q = onlineAcct(t);
   if (q) { q.gold = t.gold; pfSync(q, { m: 'depok', n: coins }); broadcast({ t: 'me', id: q.id, eq: q.eq, gold: q.gold }, q.id); q.conn.send({ t: 'dep', a: 'mine', list: depMineOf(d.key) }); }
   ownersCast({ t: 'dep', a: 'olist', list: depOList() });
+  logAdd('dep', by, t.name, Math.round(d.usdC * coins / full) / 100, { c: coins, coin: d.coin });
   broadcast({ t: 'dpn', n: t.name, usd: Math.round(d.usdC * coins / full) / 100 });      // herkese: "X yatırım yaptı" bildirimi (sağ alt) + para sesi
   return true;
 }
@@ -1748,11 +1769,32 @@ const RNG_TZ = +process.env.DAY_TZ_H || 3, RNG_MAX = +process.env.RNG_MAX_SCORE 
 const dayKeyOf = t => new Date(t + RNG_TZ * 36e5).toISOString().slice(0, 10);
 const dayLeft = t => 864e5 - ((t + RNG_TZ * 36e5) % 864e5);
 const rngReward = sc => sc >= 150 ? 100 : sc >= 100 ? 50 : 20;
+const DW_R = [2, 10, 4, 20, 6, 50, 12, 30], DW_W = { 2: 25, 4: 22, 6: 16, 10: 14, 12: 9, 20: 7, 30: 4, 50: 3 };   // dilim sırası istemcidekiyle aynı
+const DW_MIN_TIER = 1, DW_MS = 864e5;
+function dwMsg(p, m, now) {                          // günlük çark: en az Tier 1, 24 saatte bir; sonucu sunucu belirler
+  const a = p.acct, c = p.conn, act = String(m.a || '');
+  if (now - (p.dwRt || 0) < 400) return; p.dwRt = now;
+  const tier = tierOf(a.wag || 0), left = Math.max(0, DW_MS - (now - (a.dwT || 0)));
+  if (act === 'info') return c.send({ t: 'dw', a: 'info', tier, left: a.dwT ? left : 0, min: DW_MIN_TIER });
+  if (act === 'reset') { if (p.role !== 'owner') return; a.dwT = 0; saveUsers(); return c.send({ t: 'dw', a: 'info', tier, left: 0, min: DW_MIN_TIER }); }
+  if (act !== 'spin') return;
+  if (tier < DW_MIN_TIER) return c.send({ t: 'dw', a: 'tier', tier, min: DW_MIN_TIER });
+  if (a.dwT && left > 0) return c.send({ t: 'dw', a: 'wait', left, tier, min: DW_MIN_TIER });
+  let x = crypto.randomInt(0, DW_R.reduce((t, v) => t + DW_W[v], 0)), idx = 0;
+  for (let i = 0; i < DW_R.length; i++) { x -= DW_W[DW_R[i]]; if (x < 0) { idx = i; break; } }
+  const g = DW_R[idx];
+  a.dwT = now; a.gold += g; p.gold = a.gold; p.holdUntil = Math.max(p.holdUntil || 0, now + 6000); saveUsers();
+  c.send({ t: 'dw', a: 'res', i: idx, g, left: DW_MS, tier, min: DW_MIN_TIER });
+  setTimeout(() => { if (players.get(p.id) === p) { pfSync(p, { m: 'dw', n: g }); broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id); } }, 4800);   // çark dönerken bakiye değişmesin
+  log('günlük çark', p.name, '+' + g);
+}
+const RNG_MIN_DEP_C = +process.env.RNG_MIN_DEP_USD * 100 || 500;   // hedef poligonu için en az toplam yatırım ($5)
 function rngMsg(p, m, now) {
   const a = p.acct, c = p.conn, act = String(m.a || '');
   if (now - (p.rngT || 0) < 400) return; p.rngT = now;
   const day = dayKeyOf(now);
   if (act === 'start') {
+    if ((a.depC || 0) < RNG_MIN_DEP_C) return c.send({ t: 'rng', a: 'dep', need: RNG_MIN_DEP_C / 100, have: Math.floor(a.depC || 0) / 100 });
     if (a.rngDay === day) return c.send({ t: 'rng', a: 'no', left: dayLeft(now) });
     a.rngDay = day; a.rngOn = now; saveUsers();                    // hak başta düşer: yenileyerek tekrar denenemez
     return c.send({ t: 'rng', a: 'go' });
@@ -1888,7 +1930,33 @@ function passiveTick() {
 }
 setInterval(passiveTick, PASSIVE_WIN).unref();
 function pfSync(p, msg) { p.pfLock = Date.now() + 3000; p.conn.send(Object.assign({ t: 'pfu', pf: pubPf(p.acct) }, msg || {})); }
+const TIP_NEAR = +process.env.TIP_NEAR || 15;      // "yakındakilere tip" yarıçapı (metre)
+function doTipMulti(p, m, now) {                   // herkese / yakındakilere: tutar KİŞİ BAŞINADIR; alıcıları sunucu belirler
+  const near = m.k === 'near', n = Math.floor(Number(m.a));
+  if (!(n >= 1) || n > 1000000) return;
+  if (now - (p.tipT || 0) < 1000) return;
+  if (p.tr) return p.conn.send({ t: 'tr', a: 'msg', c: 'intrade' });
+  const rec = [];
+  for (const q of players.values()) {
+    if (q === p) continue;
+    if (near && (Math.hypot(q.st[0] - p.st[0], q.st[2] - p.st[2]) > TIP_NEAR || Math.abs(q.st[1] - p.st[1]) > 4)) continue;
+    rec.push(q);
+  }
+  if (!rec.length) return p.conn.send({ t: 'tr', a: 'msg', c: near ? 'nonear' : 'noone' });
+  const tot = n * rec.length, free = p.role === 'owner';
+  if (tot > p.acct.gold) return p.conn.send({ t: 'berr', c: 'poor', gold: p.acct.gold });
+  if (!free && (n > TIP_MAX || !xferTake(p.acct, tot))) return p.conn.send({ t: 'tr', a: 'msg', c: 'xfcap', g: TIP_MAX, d: XFER_DAY });
+  p.tipT = now;
+  p.acct.gold -= tot; p.gold = p.acct.gold;
+  for (const q of rec) { q.acct.gold += n; q.gold = q.acct.gold; }
+  saveUsers();
+  pfSync(p, { m: 'tipmany', n, c: rec.length, tot, k: near ? 'near' : 'all' });
+  broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id);
+  for (const q of rec) { pfSync(q, { m: 'tipin', n, who: p.name }); broadcast({ t: 'me', id: q.id, eq: q.eq, gold: q.gold }, q.id); }
+  log('tip', near ? 'yakındakilere' : 'herkese', p.name, rec.length + ' kişi × ' + n);
+}
 function doTip(p, m, now) {
+  if (m.k === 'all' || m.k === 'near') return doTipMulti(p, m, now);
   const t = players.get(Number(m.id)), n = Math.floor(Number(m.a));
   if (!t || t === p || !(n >= 1) || n > 1000000) return;
   if (now - (p.tipT || 0) < 1000) return;
@@ -1999,6 +2067,7 @@ function adminAction(p, m, now) {
     return;
   }
   if (a === 'clear') return broadcast({ t: 'clear' });
+  if (a === 'logs') return me >= 2 ? p.conn.send({ t: 'logs', l: LOGS.slice(-300).reverse() }) : p.conn.send({ t: 'err', c: 'perm' });
   if (a === 'bans') return p.conn.send({ t: 'bans', l: banList() });
   if (a === 'unban') {
     const key = cleanText(m.n, 14).toLowerCase();
@@ -2012,7 +2081,7 @@ function adminAction(p, m, now) {
     gt.acct.gold += amt; gt.gold = gt.acct.gold; saveUsers();
     pfSync(gt, { m: 'gift', n: amt, who: p.name });
     broadcast({ t: 'me', id: gt.id, eq: gt.eq, gold: gt.gold }, gt.id);
-    log('give', p.name, '->', gt.name, amt);
+    log('give', p.name, '->', gt.name, amt); logAdd('give', p.name, gt.name, amt);
     return p.conn.send({ t: 'tr', a: 'msg', c: 'gave', n: gt.name, g: amt });
   }
   const target = players.get(Number(m.id));
@@ -2027,6 +2096,17 @@ function adminAction(p, m, now) {
     return broadcast({ t: 'evt', e: r ? 'prom' : 'dem', n: target.name });
   }
   if (me <= tr) return p.conn.send({ t: 'err', c: 'rank' });
+  if (a === 'take') {                              // altın al: kendinden düşük yetkili/oyuncudan, verme sınırıyla aynı tavan
+    const cap = me >= 2 ? 5000000 : 50000, n = Math.floor(Number(m.n));
+    if (!(n >= 1)) return;
+    const amt = Math.min(n, cap, Math.floor(target.acct.gold));
+    if (!(amt >= 1)) return p.conn.send({ t: 'tr', a: 'msg', c: 'tookzero', n: target.name });
+    target.acct.gold -= amt; target.gold = target.acct.gold; saveUsers();
+    pfSync(target, { m: 'taken', n: amt, who: p.name });
+    broadcast({ t: 'me', id: target.id, eq: target.eq, gold: target.gold }, target.id);
+    log('take', p.name, '<-', target.name, amt); logAdd('take', p.name, target.name, amt);
+    return p.conn.send({ t: 'tr', a: 'msg', c: 'took', n: target.name, g: amt });
+  }
   if (a === 'mute' || a === 'unmute') {
     target.muted = a === 'mute';
     target.conn.send({ t: 'muted', v: target.muted ? 1 : 0 });
@@ -2183,6 +2263,7 @@ async function goldResetOnce() {
   if (REMOTE) await flushRemote(); else { writeUsers(); }
   done[GOLD_RESET_ID] = now;
   if (REMOTE) await redis(['SET', 'bloodbet:resets', JSON.stringify(done)]); else fs.writeFileSync(META, JSON.stringify(done));
+  logAdd('reset', 'sistem', '', n, { c: GOLD_RESET_TO });
   log(`BAKİYE SIFIRLANDI: ${n} hesap → ${GOLD_RESET_TO} coin (önceki toplam ${Math.round(before)} coin; yedek: yedek-${GOLD_RESET_ID}.json)`);
 }
 
