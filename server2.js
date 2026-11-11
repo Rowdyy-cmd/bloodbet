@@ -344,7 +344,7 @@ const REQ = {"c1":0,"c2":1,"c3":2,"c4":3,"c5":4,"c6":5,"c7":7,"c8":8,"c9":9,"c10
 const TIERS = [5000, 15000, 40000, 90000, 180000, 350000, 650000, 1100000, 1800000, 3000000];   // Tier 1..10 için gereken toplam wager
 const tierOf = w => { let t = 0; while (t < TIERS.length && w >= TIERS[t]) t++; return t; };
 const RB_RATES = [0.05, 0.052, 0.054, 0.056, 0.058, 0.06, 0.062, 0.064, 0.066, 0.068, 0.07];   // rank (-,I..X) -> kasa avantajından geri dönen pay
-const EDGE = { roul: 0.051, mines: 0.035, wof: 0.0625, bj: 0.008, case: 0.04, towers: 0.03, dice: 0.02, cf: 0.02, cfp: 0.05 };   // gerçek kasa avantajları (rakeback / affiliate bunun üzerinden hesaplanır)                                    // oyun başına kasa avantajı
+const EDGE = { roul: 0.051, mines: 0.07, wof: 0.0625, bj: 0.008, case: 0.04, towers: 0.06, dice: 0.05, cf: 0.02, cfp: 0.05 };   // gerçek kasa avantajları (rakeback / affiliate bunun üzerinden hesaplanır)                                    // oyun başına kasa avantajı
 // Haftalık bonus her pazartesi 06:00'da (TSİ), aylık bonus her ayın 1'inde 00:00'da (TSİ) yenilenir
 const BTZ = +process.env.DAY_TZ_H || 3, WK_HOUR = 6;
 const wkIdx = t => Math.floor(((t + (BTZ - WK_HOUR) * 36e5) / 864e5 + 3) / 7);                     // 1970-01-01 perşembe -> pazartesi tabanlı hafta no
@@ -1072,7 +1072,7 @@ function bjAct(p, m, now) {
 
 /* ---------- mines (sunucu hakemlidir) ---------- */
 // 5x5 tahta · her güvenli karede çarpan artar · %5 kasa payı · en fazla x100
-const MN_RTP = 0.965, MN_CAP = 1000, MN_N = 25;      // %99 geri dönüş (Stake Mines ile aynı)
+const MN_RTP = 0.93, MN_CAP = 1000, MN_N = 25;      // %93 geri dönüş, en fazla x1000
 function mnMult(m, k) {
   if (k <= 0) return 1;
   let x = MN_RTP;
@@ -1141,7 +1141,7 @@ function caseMsg(p, m, now) {
 }
 
 /* ---------- TOWERS: her katta güvenli kareyi seç, çarpan yüksel, istediğinde çek ---------- */
-const TW_FL = 8, TW_RTP = 0.97, TW_CAP = 1000;      // %99 geri dönüş (Stake Towers/Dragon Tower ile aynı)
+const TW_FL = 8, TW_RTP = 0.94, TW_CAP = 1000;      // %94 geri dönüş, en fazla x1000
 const TW_MODES = { easy: [4, 1], medium: [3, 1], hard: [2, 1], extreme: [3, 2] };   // [kare sayısı, bomba sayısı]
 function twMult(d, k) { if (k <= 0) return 1; const n = TW_MODES[d][0], b = TW_MODES[d][1]; return Math.min(TW_CAP, Math.floor(TW_RTP * Math.pow(n / (n - b), k) * 100) / 100); }
 function twView(g, st, hit, pay, gold) {
@@ -1189,10 +1189,10 @@ function twAct(p, m, now) {
 }
 
 /* ---------- DICE: hedef şansı seç, üstü/altı, sonuç sunucuda ---------- */
-const DICE_RTP = 98;                    // %98 geri dönüş, şans 0,01–97
+const DICE_RTP = 95;                    // %95 geri dönüş, şans 0,01–94
 function diceBet(p, m, now) {
   const a = p.acct, c = p.conn, bet = Math.floor(Number(m.a)), ch = Math.round(Number(m.c) * 100) / 100, o = m.o === 'over' ? 'over' : 'under';
-  if (!(bet >= MIN_BET && bet <= MAX_BET) || !(ch >= 0.01 && ch <= 97)) return;
+  if (!(bet >= MIN_BET && bet <= MAX_BET) || !(ch >= 0.01 && ch <= 94)) return;
   if (bet > a.gold) return c.send({ t: 'berr', c: 'poor', gold: a.gold });
   p.betT = now + 1200; p.holdUntil = now + 3000;
   const roll = crypto.randomInt(0, 10000), cI = Math.round(ch * 100);
