@@ -1007,7 +1007,7 @@ function bjFinish(p, now, res, pay) {
 function bjResolve(p, now) {            // tüm eller bitti (ya da bağlantı koptu): kasa oynar, eller sonuçlanır
   const h = p.bj;
   for (const x of h.hands) x.done = true;
-  if (h.hands.some(x => bjVal(x.p).v <= 21)) for (; ;) { const dv = bjVal(h.d); if (dv.v < 17 || (dv.v === 17 && dv.soft)) h.d.push(bjDraw()); else break; }   // kasa yumuşak 17'de de kart çeker
+  if (h.hands.some(x => bjVal(x.p).v <= 21)) for (; ;) { const dv = bjVal(h.d); if (dv.v < 17) h.d.push(bjDraw()); else break; }   // kasa tüm 17'lerde (yumuşak dahil) durur
   const dv = bjVal(h.d).v; let pay = 0;
   for (const x of h.hands) {
     const pv = bjVal(x.p).v;
@@ -1698,7 +1698,7 @@ function depMsg(p, m, now) {
     const cr = CRYPTOS.find(x => x[0] === m.coin), w = cr && WALLETS[cr[0]];
     if (!cr || (NP_ON ? !NP_CUR[cr[0]] : (!w || !w.addr))) return err('coin');
     const usdC = Math.round(Number(m.usd) * 100);
-    if (!(usdC >= DEP_MIN_C && usdC <= DEP_MAX_C)) return err('amt');
+    if (!(usdC >= DEP_MIN_C && usdC <= DEP_MAX_C)) return c.send({ t: 'dep', a: 'err', c: 'amt', mn: DEP_MIN_C / 100, mx: DEP_MAX_C / 100 });
     const open = Object.values(deps).filter(d => d.key === key && (d.st === 'open' || d.st === 'paid'));
     if (open.length >= 3) return err('many');
     const day = Object.values(deps).filter(d => d.key === key && d.st !== 'no' && d.st !== 'cx' && now - d.at < 864e5).reduce((t, d) => t + d.usdC, 0);
