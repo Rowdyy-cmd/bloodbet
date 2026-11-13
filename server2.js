@@ -681,6 +681,23 @@ let nextId = 1;
 
 const info = p => ({ id: p.id, name: p.name, eq: p.eq, gold: p.gold, role: p.role, tr: tierOf(p.acct.wag || 0), m: p.muted ? 1 : 0, st: p.st });
 
+/* Kazanç duyurusu: yakındaki oyunculara sağ-alt bildirim {t:'win'}; yüksek (>=BIG_WIN) veya max kazanç (>=WIN_MAXX katı) herkese chat'te {t:'big'} */
+const WIN_NEAR = +process.env.WIN_NEAR || 25, WIN_MAXX = +process.env.WIN_MAXX || 100, WIN_MAXX_MIN = +process.env.WIN_MAXX_MIN || 300;
+function winFx(p, name, g, bet, pay, delay) {
+  const net = pay - bet; if (!(net > 0)) return;
+  const x = bet > 0 ? Math.floor(pay / bet * 100) / 100 : 0, mx = x >= WIN_MAXX && net >= WIN_MAXX_MIN;
+  setTimeout(() => {
+    if (p && p.st) {
+      const fr = frame(1, Buffer.from(JSON.stringify({ t: 'win', n: name, w: net, g, x })));
+      for (const q of players.values()) {
+        if (q === p || !q.st || q.acct === p.acct) continue;
+        if (Math.hypot(q.st[0] - p.st[0], q.st[2] - p.st[2]) > WIN_NEAR || Math.abs(q.st[1] - p.st[1]) > 6) continue;
+        q.conn.sendFrame(fr, true);
+      }
+    }
+    if (net >= BIG_WIN || mx) broadcast({ t: 'big', n: name, w: net, g, mx: mx ? Math.floor(x) : 0 });
+  }, delay || 0);
+}
 function broadcast(obj, exceptId, droppable) {
   const fr = frame(1, Buffer.from(JSON.stringify(obj)));
   for (const p of players.values()) if (p.id !== exceptId) p.conn.sendFrame(fr, droppable);
@@ -1006,7 +1023,7 @@ function bjFinish(p, now, res, pay) {
   const h = p.bj, a = p.acct, bet = bjTotal(h);
   a.gold += pay; p.gold = a.gold; p.rewT = now; p.holdUntil = now + 3000; p.bj = null; saveUsers();
   broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id);
-  if (pay - bet >= BIG_WIN) setTimeout(() => broadcast({ t: 'big', n: p.name, w: pay - bet, g: 'bj' }), 1200);
+  winFx(p, p.name, 'bj', bet, pay, 1200);
   return bjView(h, res, pay, a.gold);
 }
 function bjResolve(p, now) {            // tüm eller bitti (ya da bağlantı koptu): kasa oynar, eller sonuçlanır
@@ -1093,7 +1110,7 @@ function mnFinish(p, now, st, hit) {
   const pay = st === 'cash' ? Math.floor(g.bet * mnMult(g.m, g.rev.length)) : 0;
   a.gold += pay; p.gold = a.gold; p.rewT = now; p.holdUntil = now + 3000; p.mn = null; saveUsers();
   broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id);
-  if (pay - g.bet >= BIG_WIN) setTimeout(() => broadcast({ t: 'big', n: p.name, w: pay - g.bet, g: 'mines' }), 1200);
+  winFx(p, p.name, 'mines', g.bet, pay, 1200);
   return mnView(g, st, hit, pay, a.gold);
 }
 function mnStart(p, m, now) {
@@ -1142,7 +1159,7 @@ function vpFinish(p, now, st) {
   const pay = st === 'cash' ? Math.floor(g.bet * VP_LAD[g.md][g.k]) : 0;
   a.gold += pay; p.gold = a.gold; p.rewT = now; p.holdUntil = now + 3000; p.vp = null; saveUsers();
   broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id);
-  if (pay - g.bet >= BIG_WIN) setTimeout(() => broadcast({ t: 'big', n: p.name, w: pay - g.bet, g: 'vamp' }), 1200);
+  winFx(p, p.name, 'vamp', g.bet, pay, 1200);
   return vpView(g, st, pay, a.gold);
 }
 function vpStart(p, m, now) {
@@ -1188,7 +1205,7 @@ function caseMsg(p, m, now) {
   a.gold += amt - cs.p; p.gold = a.gold; p.rewT = now; wagerAdd(a, cs.p, 'case'); saveUsers();
   c.send({ t: 'cres', i, a: amt, r: rar, bet: cs.p, gold: a.gold });
   broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id);
-  if (amt - cs.p >= BIG_WIN) setTimeout(() => broadcast({ t: 'big', n: p.name, w: amt - cs.p, g: 'case' }), 5400);
+  winFx(p, p.name, 'case', cs.p, amt, 5400);
 }
 
 /* ---------- TOWERS: her katta güvenli kareyi seç, çarpan yüksel, istediğinde çek ---------- */
@@ -1205,7 +1222,7 @@ function twFinish(p, now, st, hit) {
   const pay = st === 'cash' ? Math.floor(g.bet * twMult(g.d, g.picks.length)) : 0;
   a.gold += pay; p.gold = a.gold; p.rewT = now; p.holdUntil = now + 3000; p.tw = null; saveUsers();
   broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id);
-  if (pay - g.bet >= BIG_WIN) setTimeout(() => broadcast({ t: 'big', n: p.name, w: pay - g.bet, g: 'towers' }), 1200);
+  winFx(p, p.name, 'towers', g.bet, pay, 1200);
   return twView(g, st, hit, pay, a.gold);
 }
 function twStart(p, m, now) {
@@ -1252,7 +1269,7 @@ function diceBet(p, m, now) {
   a.gold += pay - bet; p.gold = a.gold; p.rewT = now; wagerAdd(a, bet, 'dice'); saveUsers();
   c.send({ t: 'dres', roll: roll / 100, win, mult, bet, pay, gold: a.gold, o, c: ch });
   broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id);
-  if (pay - bet >= BIG_WIN) setTimeout(() => broadcast({ t: 'big', n: p.name, w: pay - bet, g: 'dice' }), 1500);
+  winFx(p, p.name, 'dice', bet, pay, 1500);
 }
 
 /* ---------- COINFLIP: kasaya karşı ya da oyuncular arasında ---------- */
@@ -1266,7 +1283,7 @@ function cfHouse(p, m, now) {
   a.gold += pay - bet; p.gold = a.gold; p.rewT = now; wagerAdd(a, bet, 'cf'); saveUsers();
   c.send({ t: 'cfs', k: 'house', side, res, win, bet, pay, gold: a.gold });
   broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id);
-  if (pay - bet >= BIG_WIN) setTimeout(() => broadcast({ t: 'big', n: p.name, w: pay - bet, g: 'cf' }), 2200);
+  winFx(p, p.name, 'cf', bet, pay, 2200);
 }
 const CF = new Map();       // id -> { id, pid, key, name, bet, side, at }
 let cfNext = 1;
@@ -1316,7 +1333,7 @@ function cfMsg(p, m, now) {
     for (const q of [cr, p]) q.conn.send({ t: 'cfr', res, cname: cr.name, jname: p.name, cside: e.side, bet: e.bet, pot, fee, win: prize, winner: winner.name, you: q === winner ? 'win' : 'lose', gold: q.acct.gold });
     for (const q of [cr, p]) broadcast({ t: 'me', id: q.id, eq: q.eq, gold: q.gold }, q.id);
     cfCast();
-    if (prize - e.bet >= BIG_WIN) setTimeout(() => broadcast({ t: 'big', n: winner.name, w: prize - e.bet, g: 'cf' }), 2500);
+    winFx(winner, winner.name, 'cf', e.bet, prize, 2500);
     return;
   }
 }
@@ -1405,7 +1422,7 @@ function btFinish(b) {
       q.conn.send({ t: 'btr', ar: b.ar, res: win < 0 ? 'draw' : (ws.includes(s) ? 'win' : 'lose'), pay, fee: b.fee, gold: x.a.gold });
       broadcast({ t: 'me', id: q.id, eq: q.eq, gold: q.gold }, q.id);
     }
-    if (pay - b.fee >= BIG_WIN) broadcast({ t: 'big', n: x.n, w: pay - b.fee, g: 'case' });
+    winFx(q, x.n, 'case', b.fee, pay, 0);
   }
   saveUsers(); btCast();
   setTimeout(() => { if (BT[b.ar] === b) { BT[b.ar] = null; btCast(); } }, BT_HOLD);
@@ -1523,7 +1540,7 @@ function doBet(p, m, now) {
   if (m.g === 'roul') { const v = { bets, num: res.n, bet: res.bet, pay: res.pay }; p.tbv = { bets }; tblSet(p, 'roul', v); }
   else { const v = { a: total, seg: res.seg, mult: res.mult, bet: res.bet, pay: res.pay }; p.tbv = { a: total }; tblSet(p, 'wof', v); }
   broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id);
-  if (res.pay - total >= BIG_WIN) setTimeout(() => broadcast({ t: 'big', n: p.name, w: res.pay - total, g: res.g }), 5200);
+  winFx(p, p.name, res.g, total, res.pay, 5200);
 }
 
 /* ---------- ORTAK RULET: herkes aynı tura bahis koyar, süre bitince tek çark döner ---------- */
@@ -1585,7 +1602,7 @@ function rrSettle(now) {
     e.acct.gold += pay; e.p.gold = e.acct.gold; e.p.rewT = now; e.p.holdUntil = 0;
     if (players.get(e.p.id) === e.p) e.p.conn.send({ t: 'rres', n, bet: e.total, pay, gold: e.acct.gold });
     broadcast({ t: 'me', id: e.p.id, eq: e.p.eq, gold: e.p.gold }, e.p.id);
-    if (pay - e.total >= BIG_WIN) broadcast({ t: 'big', n: e.p.name, w: pay - e.total, g: 'roul' });
+    winFx(e.p, e.p.name, 'roul', e.total, pay, 0);
   }
   saveUsers();
   RR.hist.unshift(n); RR.hist = RR.hist.slice(0, 12);
@@ -1630,7 +1647,7 @@ function crPay(e, x, now) {
   saveUsers();
   crSend(e.p, crMe(e.p));
   broadcast({ t: 'me', id: e.p.id, eq: e.p.eq, gold: e.p.gold }, e.p.id);
-  if (pay - e.amt >= BIG_WIN) broadcast({ t: 'big', n: e.p.name, w: pay - e.amt, g: 'crash' });
+  winFx(e.p, e.p.name, 'crash', e.amt, pay, 0);
 }
 function crLock(now) {
   CR.c = crPoint(); CR.tc = Math.log(CR.c) / CR_K * 1000;
