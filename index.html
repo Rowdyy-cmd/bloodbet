@@ -208,6 +208,13 @@ input[type=text]:focus,input[type=password]:focus{border-color:var(--red);box-sh
 .pc.back{background:repeating-linear-gradient(45deg,#7a1f33 0 8px,#5a1424 8px 16px);border:3px solid #f6eceb}
 @keyframes dealin{from{transform:translateY(-30px) scale(.8);opacity:0}to{transform:none;opacity:1}}
 .bjbtns{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:6px}.bjbtns .btn{margin:0}
+#crcv{width:100%;max-width:720px;border-radius:14px;border:2px solid #6a4a2a;display:block;margin:8px auto;background:#0b0d1a}
+#crhist{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;min-height:26px;margin-bottom:4px}.crh{padding:2px 9px;border-radius:10px;font:700 12px var(--fd,sans-serif);background:#24141c}.crh.g{color:#7fd9a0}.crh.m{color:#ffd36b}.crh.h{color:#ff8aa0}
+#crpl{margin-top:10px;max-height:170px;overflow-y:auto;text-align:left;font-size:13px}.crp{display:flex;justify-content:space-between;gap:10px;padding:3px 8px;border-bottom:1px solid var(--line)}.crp.w b{color:#4fd17a}.crp.l{opacity:.5}
+.btn.crcash{background:linear-gradient(180deg,#3fd47a,#1f8f4a);color:#fff;animation:crpulse .9s infinite}@keyframes crpulse{50%{filter:brightness(1.25)}}
+#vpcv{width:100%;max-width:420px;border-radius:14px;border:2px solid #5a1a2a;display:block;margin:8px auto;background:#07030a}
+#vpstat{font-weight:700;margin:6px 0;min-height:22px}#vplad{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:4px 0 8px}#vplad span{padding:2px 8px;border-radius:9px;background:#24141c;font:700 12px var(--fd,sans-serif);opacity:.7}#vplad span.on{background:#7a1020;color:#fff;opacity:1}#vplad span.done{color:#7fd9a0;opacity:.6}
+.btn.vpump{background:linear-gradient(180deg,#d4203c,#7a0f20);color:#fff}
 #mngrid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;max-width:360px;margin:16px auto;padding:12px;border-radius:14px;background:linear-gradient(180deg,#1b1020,#100810);border:2px solid #c89a6a;box-shadow:inset 0 0 30px rgba(0,0,0,.5)}
 .mt{aspect-ratio:1;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:linear-gradient(180deg,#2c1a2e,#1a0f1d);font-size:28px;cursor:pointer;color:#fff;transition:transform .12s,filter .12s;padding:0;box-shadow:0 3px 0 #0a0510}
 .mt:hover:not(:disabled){transform:translateY(-2px);filter:brightness(1.3)}.mt:disabled{cursor:default}
@@ -483,6 +490,20 @@ body.hubon #top,body.hubon #side,body.hubon #hint,body.hubon #cross,body.hubon #
 <div id="twdiff" class="tabs"></div><div id="twgrid"></div><div id="twstat"></div><div id="twmsg" class="tiny" style="min-height:20px;margin:0 0 4px"></div>
 <div class="chips" id="twchips" style="justify-content:center"></div>
 <button class="btn" id="twgo"></button><button class="btn" id="twcash"></button><button class="btn alt" id="twclose" data-i="close"></button><div class="tiny" id="twrule"></div></div></div>
+<div id="crash" class="ov" style="display:none"><div class="box wide" style="text-align:center">
+<div class="head"><h2 data-i="crtitle"></h2><div class="pill gp"><i class="cn"></i><b id="goldcr">0</b></div></div>
+<div id="crhist"></div><canvas id="crcv" width="720" height="320"></canvas>
+<div id="crmsg" class="tiny" style="min-height:20px;margin:4px 0"></div>
+<div class="chips" id="crchips" style="justify-content:center"></div>
+<div class="row"><span data-i="crauto"></span><input id="crautoin" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" maxlength="7" style="width:90px;text-align:center" data-ip="crautoph"><b>x</b></div>
+<button class="btn" id="crgo"></button><button class="btn alt" id="crcancel" data-i="crcancel"></button><button class="btn alt" id="crclose" data-i="close"></button>
+<div id="crpl"></div><div class="tiny" id="crrule"></div></div></div>
+<div id="vamp" class="ov" style="display:none"><div class="box" style="text-align:center">
+<div class="head"><h2 data-i="vptitle"></h2><div class="pill gp"><i class="cn"></i><b id="goldvp">0</b></div></div>
+<div class="tabs" id="vpmode"></div><canvas id="vpcv" width="420" height="300"></canvas>
+<div id="vpstat"></div><div id="vplad"></div><div id="vpmsg" class="tiny" style="min-height:20px;margin:0 0 4px"></div>
+<div class="chips" id="vpchips" style="justify-content:center"></div>
+<button class="btn" id="vpgo"></button><button class="btn vpump" id="vppump"></button><button class="btn" id="vpcash"></button><button class="btn alt" id="vpclose" data-i="close"></button><div class="tiny" id="vprule"></div></div></div>
 <div id="dice" class="ov" style="display:none"><div class="box" style="text-align:center">
 <div class="head"><h2 data-i="dctitle"></h2><div class="pill gp"><i class="cn"></i><b id="gold11">0</b></div></div>
 <div id="dcres">–</div><div id="dcbar"><div id="dcwin"></div><div id="dcmark"></div></div><div id="dcinfo" class="tiny"></div>
@@ -561,6 +582,8 @@ Object.assign(LG.tr,{wrline:'Wager şartı: yatırdığın kadar bahis oynamalı
 Object.assign(LG.en,{wrline:'Wager requirement: wager as much as you deposited — {n} coins left. Tips, trades, giveaways and the daily wheel are locked until done.',wrdone:'Wager requirement complete! Tips, trades, giveaways and the daily wheel are unlocked.',wreqmsg:'Finish your wager requirement first: {n} more coins to wager.',wwreq:'Daily wheel is locked until your wager requirement is done — {n} coins left.',gw_e_wreq:'You cannot create a giveaway before finishing your wager requirement.',deps_t:'Depositors',deps_none:'No depositors yet.',deps_done:'wager done',deps_left:'wager left {n}'});
 Object.assign(LG.tr,{dp_tabdep:'Yatır',dp_tabwd:'Çek',wd_off:'Çekimler şu an kapalı.',wd_rule:'Coinlerini {coin} olarak çekebilirsin. 100 coin = $1. Tek çekim en az ${min}, en çok ${max}; günlük limit ${day}. Kesinti: %{pct} + ${flat} ağ ücreti. Adres TRON (TRC20) olmalı, yanlış adrese gönderilen para geri alınamaz.',wd_r_mail:'E-postan doğrulanmış',wd_r_dep:'En az bir yatırımın var',wd_r_wr:'Wager şartını tamamla — kalan {n} coin',wd_r_wr0:'Wager şartın tamam',wd_r_age:'Hesap en az {a} saatlik olmalı — {h} saat kaldı',wd_r_age0:'Hesap yaşı yeterli',wd_paused:'Çekimler geçici olarak durduruldu. Daha sonra tekrar dene.',wd_addr:'{coin} adresin (T ile başlar)',wd_coins:'Çekilecek coin',wd_max:'Maks',wd_prev:'Brüt ${g} · kesinti ${f} · eline geçen ${n} USDT',wd_btn:'Çekim talebi oluştur',wd_sent:'Çekim talebin alındı, işleniyor. Coinlerin hesabından düşüldü.',wd_done:'Çekimin tamamlandı: ${n} USDT gönderildi!',wd_mine:'Çekimlerim',wd_none:'Henüz çekim yok.',wd_s_proc:'İşleniyor',wd_s_done:'Gönderildi',wd_s_fail:'Reddedildi, iade edildi',wd_s_review:'İnceleniyor',wd_failnote:'Coinlerin hesabına geri yattı.',wd_reviewnote:'Bu çekim elle kontrol ediliyor; sonuçlanınca bildirilecek.',wd_refunded:'Çekimin gerçekleşmedi, {n} coin hesabına iade edildi.',wd_e_off:'Çekimler kapalı.',wd_e_pause:'Çekimler geçici olarak durduruldu.',wd_e_mail:'Önce e-postanı doğrulamalısın.',wd_e_nodep:'Çekim için en az bir yatırım yapmış olmalısın.',wd_e_wreq:'Önce wager şartını tamamla: {n} coin daha bahis oynamalısın.',wd_e_age:'Hesabın çok yeni; yaklaşık {h} saat sonra çekebilirsin.',wd_e_busy:'Bir oyun ya da takas sürerken çekim yapılamaz.',wd_e_addr:'Geçersiz TRON (TRC20) adresi.',wd_e_amt:'Tutar ${mn} – ${mx} aralığında olmalı.',wd_e_poor:'Bakiyen yetmiyor.',wd_e_many:'Zaten işlemde olan bir çekimin var.',wd_e_cool:'Çok sık çekim yapıyorsun, biraz bekle.',wd_e_day:'Günlük çekim limitine ulaştın.',wd_e_gday:'Sitenin günlük çekim limiti doldu, yarın tekrar dene.',wd_adm:'Çekimler',wd_pause:'Çekimleri durdur',wd_resume:'Çekimleri aç',wd_refund:'İade et',wd_paid:'Ödendi say',lg_wd:'{by} çekim: {to} · {n} ({c} coin)'});
 Object.assign(LG.en,{dp_tabdep:'Deposit',dp_tabwd:'Withdraw',wd_off:'Withdrawals are currently disabled.',wd_rule:'You can withdraw your coins as {coin}. 100 coins = $1. Min ${min}, max ${max} per withdrawal; daily limit ${day}. Fee: {pct}% + ${flat} network fee. The address must be TRON (TRC20); funds sent to a wrong address cannot be recovered.',wd_r_mail:'Your email is verified',wd_r_dep:'You have made at least one deposit',wd_r_wr:'Finish your wager requirement — {n} coins left',wd_r_wr0:'Wager requirement complete',wd_r_age:'Account must be at least {a} h old — {h} h left',wd_r_age0:'Account age OK',wd_paused:'Withdrawals are temporarily paused. Try again later.',wd_addr:'Your {coin} address (starts with T)',wd_coins:'Coins to withdraw',wd_max:'Max',wd_prev:'Gross ${g} · fee ${f} · you receive ${n} USDT',wd_btn:'Request withdrawal',wd_sent:'Your withdrawal request was received and is being processed. The coins were deducted from your balance.',wd_done:'Your withdrawal is complete: ${n} USDT sent!',wd_mine:'My withdrawals',wd_none:'No withdrawals yet.',wd_s_proc:'Processing',wd_s_done:'Sent',wd_s_fail:'Rejected, refunded',wd_s_review:'Under review',wd_failnote:'Your coins were returned to your balance.',wd_reviewnote:'This withdrawal is being checked manually; you will be notified.',wd_refunded:'Your withdrawal did not go through; {n} coins were refunded.',wd_e_off:'Withdrawals are disabled.',wd_e_pause:'Withdrawals are temporarily paused.',wd_e_mail:'Verify your email first.',wd_e_nodep:'You must have made at least one deposit to withdraw.',wd_e_wreq:'Finish your wager requirement first: {n} more coins to wager.',wd_e_age:'Your account is too new; you can withdraw in about {h} h.',wd_e_busy:'You cannot withdraw during a game or trade.',wd_e_addr:'Invalid TRON (TRC20) address.',wd_e_amt:'Amount must be between ${mn} and ${mx}.',wd_e_poor:'Not enough balance.',wd_e_many:'You already have a withdrawal in progress.',wd_e_cool:'Too many withdrawals, wait a moment.',wd_e_day:'You reached the daily withdrawal limit.',wd_e_gday:'The site daily withdrawal limit is reached, try again tomorrow.',wd_adm:'Withdrawals',wd_pause:'Pause withdrawals',wd_resume:'Resume withdrawals',wd_refund:'Refund',wd_paid:'Mark paid',lg_wd:'{by} withdrawal: {to} · {n} ({c} coins)'});
+Object.assign(LG.tr,{crash:'Crash',vamp:'Vampir',crtitle:'Crash · Zeplin',crauto:'Otomatik çek',crautoph:'kapalı',crgo:'Bahis yap',crupd:'Bahsi güncelle',crcancel:'Bahsi iptal et',crcash:'ÇEK',crwait:'Tur sürüyor',crnext:'Yeni tur bekleniyor',cr_next:'Yeni tur',cr_boomt:'ZEPLİN PATLADI',cr_msg0:'Bahsini seç; zeplin patlamadan çek.',cr_placed:'Bahsin alındı: {a} coin{u}',cr_cash:'x{x} ile çektin: +{w} coin',cr_lost:'Zeplin patladı, bahis gitti.',cr_players:'Oyuncular',cr_none:'Henüz bahis yok.',crrule:'Zeplin x1.00den yükselir ve rastgele bir anda patlar. Patlamadan çekersen bahis × çarpan kazanırsın, çekemezsen bahsin gider. Otomatik çek: çarpan o değere ulaşınca sunucu seni çeker. Kasa payı %5 (geri dönüş %95), en fazla x1000.',rerr_closed:'Bahis aşaması kapandı, yeni turu bekle.',vptitle:'Vampir',vp_low:'Düşük',vp_medium:'Orta',vp_high:'Yüksek',vp_bite:'emiş',vpgo:'Kan emmeye başla',vppump:'Kanını em',vpcash:'Çek',vpidle:'Bir mod seç. İlk emişte x{n}.',vpstat:'Çarpan x{m} · sıradaki x{n} · çekersen {w}',vpmsg0:'Bahsini seç ve kurbanı yakala.',vpplay:'Kurban hâlâ hayatta. Emmeye devam et ya da çek.',vp_dead:'Kurban öldü! Bahsin gitti.',vp_cash:'Kaçtın! x{m} ile {w} coin çektin.',vpfinal:'Kurbanın kanı bitti, x{m} ile {w} coin otomatik çekildi.',vprule:'Her emişte çarpan artar, ama her emişte insanın ölme ihtimali vardır ve ölürse bahsin gider. İstediğin an çekebilirsin. Düşük modda risk azdır ama çarpan yavaş artar, yüksek modda tersi. Kasa payı %5 (geri dönüş %95), en fazla x1000.'});
+Object.assign(LG.en,{crash:'Crash',vamp:'Vampire',crtitle:'Crash · Zeppelin',crauto:'Auto cash out',crautoph:'off',crgo:'Place bet',crupd:'Update bet',crcancel:'Cancel bet',crcash:'CASH OUT',crwait:'Round in progress',crnext:'Waiting for next round',cr_next:'Next round',cr_boomt:'ZEPPELIN CRASHED',cr_msg0:'Pick your bet and cash out before the zeppelin crashes.',cr_placed:'Bet placed: {a} coins{u}',cr_cash:'Cashed out at x{x}: +{w} coins',cr_lost:'The zeppelin crashed, bet lost.',cr_players:'Players',cr_none:'No bets yet.',crrule:'The zeppelin climbs from x1.00 and crashes at a random moment. Cash out before it crashes to win bet × multiplier, otherwise the bet is lost. Auto cash out: the server cashes you out when the multiplier reaches that value. 5% house edge (95% return), max x1000.',rerr_closed:'Betting is closed, wait for the next round.',vptitle:'Vampire',vp_low:'Low',vp_medium:'Medium',vp_high:'High',vp_bite:'bite',vpgo:'Start feeding',vppump:'Drink blood',vpcash:'Cash out',vpidle:'Pick a mode. First bite pays x{n}.',vpstat:'Multiplier x{m} · next x{n} · cash out {w}',vpmsg0:'Pick your bet and catch the victim.',vpplay:'The victim is still alive. Keep drinking or cash out.',vp_dead:'The victim died! Bet lost.',vp_cash:'You escaped! Cashed out {w} coins at x{m}.',vpfinal:'The victim is drained, {w} coins at x{m} cashed out automatically.',vprule:'Every bite raises the multiplier, but every bite also risks the human dying, and then the bet is lost. Cash out any time. Low mode is safer but climbs slowly, high mode is the opposite. 5% house edge (95% return), max x1000.'});
 Object.assign(LG.tr,{twtitle:'Towers',tw_easy:'Kolay',tw_medium:'Orta',tw_hard:'Zor',tw_extreme:'Aşırı',twstat:'Çarpan x{m} · sıradaki x{n} · çekersen {w}',twidle:'Her katta {n} kareden {b} tanesi bomba. 8 katı geç, istediğin an çek.',twgo:'Başla',twcash:'Çek',twrule:'Her güvenli katta çarpan artar. Bomba seçersen bahsin yanar. Geri dönüş %94.',twmsg0:'Zorluğu seç, bahsini ayarla ve başla.',twplay:'Sıradaki kattan güvenli bir kare seç.',tw_lost:'Bomba! Bahsin yandı.',tw_cash:'Çektin: {w} coin (x{m})',dctitle:'Dice',dcch:'Kazanma şansı',dc_under:'Altı',dc_over:'Üstü',dcgo:'Zar At',dcinfo:'Çarpan x{m} · şans %{c} · kazanırsan {p} · sonuç {t}',dcrule:'0–99,99 arası bir sayı düşer. Şansı düşürdükçe çarpan artar (%0,01 şansta x9500). Geri dönüş %95.',dcmsg0:'Şansı ve yönü seç, zarı at.',dc_win:'Kazandın! +{w} coin',dc_lose:'Kaybettin.',cftitle:'Coinflip',cf_house:'Kasaya karşı',cf_pvp:'Oyunculara karşı',cf_h:'Yazı',cf_t:'Tura',cfgo:'Yazı Tura At',cfcreate:'İlan aç',cfempty:'Şu an açık ilan yok. İlan aç, biri katılsın.',cfjoin:'Katıl ({s})',cfcancel:'İptal',cfmsg0:'Tarafını seç.',cfmade:'İlan açıldı, bahsin emanette. Biri katılınca para çevrilir.',cfrule:'Kasaya karşı kazanırsan 1,96x ödenir. Oyunculara karşı kazanan toplam potun %95\'ini alır. İlan açınca bahsin emanete alınır; casinodan çıkarsan ya da iptal edersen iade edilir.',cf_win:'Kazandın! +{w} coin',cf_lose:'Kaybettin.',cf_pvp_res:'{a} ve {b} oynadı, kazanan {w}',cferr_poor:'Bakiyen yetmiyor.',cferr_many:'En fazla 3 açık ilanın olabilir.',cferr_gone:'Bu ilan artık yok.',cferr_own:'Kendi ilanına katılamazsın.',cferr_fast:'Biraz yavaş ol.',cferr_zone:'Casinoda olmalısın.'});Object.assign(LG.en,{twtitle:'Towers',tw_easy:'Easy',tw_medium:'Medium',tw_hard:'Hard',tw_extreme:'Extreme',twstat:'Multiplier x{m} · next x{n} · cash out {w}',twidle:'Each floor has {b} bomb(s) among {n} tiles. Climb 8 floors, cash out any time.',twgo:'Start',twcash:'Cash out',twrule:'The multiplier rises on every safe floor. Hit a bomb and you lose the bet. Return 94%.',twmsg0:'Pick a difficulty, set your bet and start.',twplay:'Pick a safe tile on the next floor.',tw_lost:'Bomb! You lost the bet.',tw_cash:'Cashed out: {w} coins (x{m})',dctitle:'Dice',dcch:'Win chance',dc_under:'Under',dc_over:'Over',dcgo:'Roll',dcinfo:'Multiplier x{m} · chance {c}% · win {p} · roll {t}',dcrule:'A number from 0 to 99.99 is rolled. Lower chance means a higher multiplier (x9500 at 0.01%). Return 95%.',dcmsg0:'Pick the chance and direction, then roll.',dc_win:'You won! +{w} coins',dc_lose:'You lost.',cftitle:'Coinflip',cf_house:'Vs House',cf_pvp:'Vs Players',cf_h:'Heads',cf_t:'Tails',cfgo:'Flip',cfcreate:'Post a flip',cfempty:'No open flips right now. Post one and wait for a challenger.',cfjoin:'Join ({s})',cfcancel:'Cancel',cfmsg0:'Choose your side.',cfmade:'Flip posted, your bet is held. It flips when someone joins.',cfrule:'Vs the house a win pays 1.96x. Vs players the winner takes 95% of the pot. Your bet is held while the flip is open; it is refunded if you cancel or leave the casino.',cf_win:'You won! +{w} coins',cf_lose:'You lost.',cf_pvp_res:'{a} vs {b}, winner {w}',cferr_poor:'Not enough coins.',cferr_many:'You can have at most 3 open flips.',cferr_gone:'That flip is gone.',cferr_own:'You cannot join your own flip.',cferr_fast:'Slow down a little.',cferr_zone:'You must be in the casino.'});
 Object.assign(LG.tr,{shlock:'Rank {r} gerekir',shunl:'Rank\'ın {n} yeni eşyanın kilidini açtı!',odds3:'Ödüller coin olarak anında hesabına yatar. Kasaların toplam geri dönüşü yaklaşık %96\'dır.',cwon:'Kasadan {a} coin çıktı!',towers:'Towers',dice:'Dice',cf:'Coinflip',case:'Kasa',rerr_offline:'Bu oyun için sunucuya bağlı olmalısın.'});Object.assign(LG.en,{shlock:'Requires rank {r}',shunl:'Your rank unlocked {n} new item(s)!',odds3:'Prizes are credited as coins instantly. Crates return about 96% overall.',cwon:'The crate paid {a} coins!',towers:'Towers',dice:'Dice',cf:'Coinflip',case:'Crate',rerr_offline:'You must be connected to the server to play this game.'});
 Object.assign(LG.tr,{gw_title:'Giveaway',gw_press2:'E tuşuna bas',gw_look:'GİVEAWAY · katılmak için E\'ye bas'});Object.assign(LG.en,{gw_title:'Giveaway',gw_press2:'Press E',gw_look:'GIVEAWAY · press E to join'});
@@ -1160,7 +1183,7 @@ function coinTex(sym,a,b){var c=document.createElement('canvas');c.width=c.heigh
   var ho=halo(0xff8a98,6,.4);ho.position.set(sx,.4,sz);S.add(ho);
   });
  /* üst kat tabelası */
- var up=sprite(function(){return L('bj')+' · '+L('dice')+' · '+L('wof')},'#ffd36b',72,19,4.75,FS);up.position.set(0,PYM+3.6,MZ0-.8);S.add(up);
+ var up=sprite(function(){return L('bj')+' · '+L('dice')+' · '+L('crash')+' · '+L('wof')},'#ffd36b',72,19,4.75,FS);up.position.set(0,PYM+3.6,MZ0-.8);S.add(up);
  var h1=halo(0xffd36b,10,.35);h1.position.set(0,PYM+3.4,MZ0-.4);S.add(h1);
 })();
 /* ---- bodrum: daralıp genişleyen iniş merdiveni + kasa savaşı salonu (2 arena) ---- */
@@ -1433,6 +1456,37 @@ function btSlotPos(ar,s,md){var a=BTA[ar];return{x:md===4?a.cx+(s-1.5)*3.6:a.cx+
  WTICK.push(function(t){dice.forEach(function(d,k){d.rotation.y=t/1500+k*1.7;d.rotation.x=Math.sin(t/1100+k)*.6;d.position.y=1.5+Math.sin(t/650+k*2)*.09})});
  var dh=halo(0xff8a9a,2.4,.3);dh.position.set(0,1.5,0);g2.add(dh);
  sign(g2,'dice','#ff8a9a');bO(dx,dz,th2,2.45,1.3);TABS.push({lv:curL,x:dx,z:dz,k:'dice',gf:gf(g2,0xff6a80,3.4),r:4.2});return g2}
+
+ function makeCrash(cx,cz,th){var g=mk2(cx,cz,th),i;
+  tbody(g,4.6,2.4,0x10204a);try{tableDress(g,4.6,2.4,0x6fb4ff,{chipX:-1.5,lamp:false})}catch(e){console.log('[masa]',e)}
+  var z=new THREE.Group();z.position.set(0,1.95,0);g.add(z);
+  var gm2=new THREE.MeshStandardMaterial({color:0xe2c27a,roughness:.35,metalness:.55,emissive:0x6a4a10,emissiveIntensity:.35}),rm=new THREE.MeshStandardMaterial({color:0xb01830,roughness:.4,emissive:0x701020,emissiveIntensity:.45});
+  var body=mAdd(z,new THREE.SphereGeometry(.5,24,16),gm2,0,0,0);body.scale.set(1.9,.7,.7);
+  var band=mAdd(z,new THREE.TorusGeometry(.355,.03,8,24),rm,0,0,0);band.rotation.y=Math.PI/2;
+  mAdd(z,new THREE.BoxGeometry(.36,.46,.04),rm,-.82,.22,0);mAdd(z,new THREE.BoxGeometry(.36,.46,.04),rm,-.82,-.22,0);mAdd(z,new THREE.BoxGeometry(.36,.04,.46),rm,-.82,0,0);
+  mAdd(z,new THREE.BoxGeometry(.34,.12,.16),MS(0x3a2014),0,-.42,0);
+  var prop=new THREE.Group();prop.position.set(-1.0,0,0);z.add(prop);mAdd(prop,new THREE.BoxGeometry(.02,.5,.05),MS(0xdddddd),0,0,0);
+  for(i=0;i<8;i++)mAdd(g,new THREE.SphereGeometry(.05,8,6),new THREE.MeshBasicMaterial({color:0xffd36b}),-1.7+i*.5,1.25+Math.pow(1.45,i)*.1,-.95);
+  WTICK.push(function(t){z.position.y=1.95+Math.sin(t/700)*.12;z.rotation.z=Math.sin(t/1100)*.05;z.rotation.y=Math.sin(t/1700)*.28;prop.rotation.x=t/35});
+  var ch=halo(0x6fb4ff,2.8,.3);ch.position.set(0,1.95,0);g.add(ch);
+  sign(g,'crash','#9ad0ff');bO(cx,cz,th,2.45,1.3);TABS.push({lv:curL,x:cx,z:cz,k:'crash',gf:gf(g,0x4fa8ff,3.4),r:4.2});return g}
+ function makeVamp(vx,vz,th){var g=mk2(vx,vz,th),i;
+  var stone=MS(0x1f1822),wd=MS(0x2c0f12),vel=MS(0x7a0f22),skin=MS(0xe8c4aa);
+  mAdd(g,new THREE.BoxGeometry(4.2,.5,2.2),stone,0,.25,0);mAdd(g,new THREE.BoxGeometry(4.3,.07,2.3),MM(0xc89a30),0,.52,0);
+  mAdd(g,new THREE.BoxGeometry(3.3,.6,1.35),wd,0,.88,0);mAdd(g,new THREE.BoxGeometry(3.36,.05,1.41),MM(0xc89a30),0,1.2,0);mAdd(g,new THREE.BoxGeometry(3.0,.04,1.05),vel,0,1.19,0);
+  mAdd(g,new THREE.BoxGeometry(.7,.14,.8),MS(0xd8c8a8),-1.15,1.3,0);
+  mAdd(g,new THREE.SphereGeometry(.28,16,12),skin,-1.1,1.55,0);
+  [.1,-.1].forEach(function(ez){mAdd(g,new THREE.SphereGeometry(.035,8,6),MS(0x222222),-.88,1.62,ez)});
+  mAdd(g,new THREE.BoxGeometry(1.3,.3,.78),MS(0x3a1a40),-.05,1.38,0);mAdd(g,new THREE.BoxGeometry(.9,.22,.5),MS(0x241830),1.05,1.34,0);
+  mAdd(g,new THREE.BoxGeometry(.55,.1,.14),skin,-.2,1.56,.14);mAdd(g,new THREE.BoxGeometry(.55,.1,.14),skin,-.2,1.56,-.14);
+  [.05,-.05].forEach(function(bz){mAdd(g,new THREE.SphereGeometry(.03,8,6),new THREE.MeshBasicMaterial({color:0xff1a3a}),-.82,1.42,.2+bz*.4)});
+  var fl=[];
+  [[-1.9,-.8],[-1.9,.8],[1.9,-.8],[1.9,.8]].forEach(function(c,k){mAdd(g,new THREE.CylinderGeometry(.07,.08,.5,10),MS(0xeee3c4),c[0],.8,c[1]);var f=halo(0xffb050,.9,.9);f.position.set(c[0],1.18,c[1]);g.add(f);fl.push(f)});
+  mAdd(g,new THREE.CylinderGeometry(.12,.16,.05,12),MM(0xc89a30),1.45,.58,1.35);mAdd(g,new THREE.CylinderGeometry(.03,.03,.22,8),MM(0xc89a30),1.45,.7,1.35);mAdd(g,new THREE.CylinderGeometry(.2,.1,.22,14),new THREE.MeshStandardMaterial({color:0xc01830,roughness:.2,metalness:.6,emissive:0x601020,emissiveIntensity:.5}),1.45,.92,1.35);
+  var vh=halo(0xff2a46,3.4,.32);vh.position.set(0,1.5,0);g.add(vh);
+  WTICK.push(function(t){fl.forEach(function(f,k){f.material.opacity=.7+.25*Math.sin(t/110+k*2)+.08*Math.sin(t/47+k)});vh.material.opacity=.28+.07*Math.sin(t/600)});
+  var sp=sprite(function(){return L('vamp').toLocaleUpperCase(cfg.lang)},'#ff5a6e',84,3.8,.95,FS);sp.position.set(0,3.5,-.3);g.add(sp);
+  bO(vx,vz,th,2.25,1.2);TABS.push({lv:curL,x:vx,z:vz,k:'vamp',gf:gf(g,0xff2a46,3.2),r:4.6});return g}
  function makeCoin(cx,cz,th){var g3=mk2(cx,cz,th),i;
  mAdd(g3,new THREE.CylinderGeometry(1.7,1.85,.18,32),darkm,0,.09,0);mAdd(g3,new THREE.CylinderGeometry(1.25,1.45,.95,32),wood,0,.66,0);mAdd(g3,new THREE.CylinderGeometry(1.5,1.5,.1,32),goldm,0,1.18,0);mAdd(g3,new THREE.CylinderGeometry(1.4,1.4,.06,32),MS(0x10263a),0,1.25,0);
  mAdd(g3,new THREE.TorusGeometry(1.62,.045,8,48),goldm,0,.2,0).rotation.x=Math.PI/2;
@@ -1487,9 +1541,10 @@ function btSlotPos(ar,s,md){var a=BTA[ar];return{x:md===4?a.cx+(s-1.5)*3.6:a.cx+
  CASES.forEach(function(c,k){makeStand(c,[-20,-10,0,10,20][k],-70,0)});
  [-24,-44].forEach(function(z){[-1,1].forEach(function(sd){var px=sd*20,p=new THREE.Mesh(new THREE.CylinderGeometry(.5,.6,H,12),dark);p.position.set(px,H/2,z);S.add(p);box(.08,H-.8,.08,0xffd36b,px-sd*.52,H/2,z,1);box(.08,H-.8,.08,0xe0566b,px,H/2,z-.52,1);obst.push([px,z,1,0])})});
  curY=PYM;curL=1;
- [['bj',-30],['bj',-20],['dice',-10],['wof',0],['dice',10],['bj',20],['bj',30]].forEach(function(u){var z=-70,g;
-  if(u[0]==='bj'){g=makeBj(u[1],z,0);if(!gB0)gB0=g}else if(u[0]==='dice')makeDice(u[1],z,0);else gW=makeWof(u[1],z,0)});
+ [['bj',-30],['bj',-20],['dice',-10],['wof',0],['crash',10],['bj',20],['bj',30]].forEach(function(u){var z=-70,g;
+  if(u[0]==='bj'){g=makeBj(u[1],z,0);if(!gB0)gB0=g}else if(u[0]==='dice')makeDice(u[1],z,0);else if(u[0]==='crash')makeCrash(u[1],z,0);else gW=makeWof(u[1],z,0)});
  curY=0;curL=0;
+ makeVamp(0,-57,0);   /* ortadaki (bodrum) merdivenin arkası */
  specBuild(gR,gW,gB0,gM0);
 
 })();
@@ -2043,6 +2098,7 @@ function netMsg(m){switch(m.t){
  case 'rres':rresMsg(m);break;
  case 'pfu':pfApply(m.pf);pfuMsg(m);break;
  case 'tr':trNet(m);break;
+ case 'cr':crNet(m);break;
  case 'dep':depNet(m);break;
  case 'wd':wdNet(m);break;
  case 'dpn':depToast(m);break;
@@ -2055,7 +2111,7 @@ function netMsg(m){switch(m.t){
  case 'bans':banL=m.l||[];if(modal==='admin')renderAdmin();break;
  case 'logs':LOGD.l=m.l||[];if(modal==='admin')renderAdmin();break;
  case 'banned':net.kicked=true;add(L('sys'),T('bannedme'),true);break;
- case 'sfx':case 'hm':case 'hp':case 'resp':case 'kf':case 'gold':case 'bres':case 'berr':case 'big':case 'bjs':case 'mns':case 'cres':case 'tws':case 'dres':case 'cfs':pvpNet(m);break;
+ case 'sfx':case 'hm':case 'hp':case 'resp':case 'kf':case 'gold':case 'bres':case 'berr':case 'big':case 'bjs':case 'mns':case 'cres':case 'tws':case 'dres':case 'cfs':case 'vps':pvpNet(m);break;
  case 'cfl':cfListMsg(m);break;case 'cfr':cfResultMsg(m);break;case 'cferr':cfErrMsg(m);break;
  case 'err':if(m.c==='dup')net.kicked=true;if(ERR[m.c])add(L('sys'),T(ERR[m.c]),true);break}}
 function netConnect(){if(net.ws||net.kicked)return;var u=netUrl();if(!u)return;var w;try{w=new WebSocket(u)}catch(e){return}net.ws=w;
@@ -2191,11 +2247,11 @@ function pvpNet(m){switch(m.t){
  case 'resp':if(mode!=='pvp')break;P.x=m.x;P.z=m.z;P.y=0;P.vy=0;P.pitch=0;P.yaw=Math.atan2(-(AX-m.x),-(AZ-m.z));PV.hp=100;PV.dead=0;$('dead').style.display='none';pvpHud();tone(400,1000,.25,'sine',.15);break;
  case 'kf':add(L('sys'),L('pvkf',{k:m.k,v:m.v})+(m.h?' ☠':''),true);break;
  case 'gold':pf.gold=m.g|0;net.me=pfKey();savePf();add(L('sys'),L('pvrew',{g:m.d}),true);tone(880,1320,.15,'triangle',.18);break;
- case 'bres':case 'berr':case 'bjs':case 'mns':case 'cres':case 'tws':case 'dres':case 'cfs':betDone(m);break;
+ case 'bres':case 'berr':case 'bjs':case 'mns':case 'cres':case 'tws':case 'dres':case 'cfs':case 'vps':betDone(m);break;
  case 'big':add(L('sys'),L('bigwin',{n:m.n,w:fm(m.w),g:L(m.g)}),true);tone(660,1320,.3,'triangle',.15);break}}
 
 /* ===== ŞANS OYUNLARI · ortak ===== */
-var CHIPS=[10,50,100,250,500,1000,2500],CHC={10:'#7a8a98',50:'#2a8a5a',100:'#2a5aa8',250:'#2a8aa8',500:'#8a3aa8',1000:'#c4344a',2500:'#d9a020'},MAXB=2500,MAXT=10000,LIM={bj:100000,mn:20000,tw:20000,wof:50000,rn:5000,ro:100000},
+var CHIPS=[10,50,100,250,500,1000,2500],CHC={10:'#7a8a98',50:'#2a8a5a',100:'#2a5aa8',250:'#2a8aa8',500:'#8a3aa8',1000:'#c4344a',2500:'#d9a020'},MAXB=2500,MAXT=10000,LIM={cr:100000,vp:20000,bj:100000,mn:20000,tw:20000,wof:50000,rn:5000,ro:100000},
  rBets=[],rChip=100,rSpin=false,rRot=0,rHist=[],rCells=[],wfBet=100,wfSpin=false,wfRot=0,bq=null;
 function kfmt(a){return a>=1000?(a/1000)+'K':''+a}
 /* ---- bahis girişi: yazarak gir + Min / ½ / 2× / Max (min 10, üst sınır yok: bakiyen kadar) ---- */
@@ -2445,7 +2501,7 @@ function bjApply(m){bjBusy=false;
  bjRender()}
 function bjLView(h,res,pay){return{st:res?'done':'play',p:h.p.slice(),d:res?h.d.slice():[h.d[0]],res:res||'',bet:h.bet,pay:pay||0,gold:pf.gold,dbl:!res&&h.p.length===2&&!h.dd}}
 function bjLEnd(res){var h=LBJ,pay=res==='bj'?Math.floor(h.bet*2.5):res==='push'?h.bet:(res==='win'||res==='dbust')?h.bet*2:0;pf.gold+=pay;LBJ=null;return bjLView(h,res,pay)}
-function bjLStand(){var h=LBJ,rn=function(){return Math.floor(Math.random()*52)},pv=bjV(h.p);for(;;){var dv=bjVS(h.d);if(dv.v<17||(dv.v===17&&dv.soft))h.d.push(rn());else break}
+function bjLStand(){var h=LBJ,rn=function(){return Math.floor(Math.random()*52)},pv=bjV(h.p);for(;;){var dv=bjVS(h.d);if(dv.v<17)h.d.push(rn());else break}
  var dd=bjV(h.d);return bjLEnd(dd>21?'dbust':pv>dd?'win':pv<dd?'lose':'push')}
 function bjLocal(a,bet){var rn=function(){return Math.floor(Math.random()*52)};
  if(a==='deal'){pf.gold-=bet;LBJ={bet:bet,p:[rn(),rn()],d:[rn(),rn()],dd:false};var pn=bjV(LBJ.p)===21,dn=bjV(LBJ.d)===21;if(pn||dn)return bjLEnd(pn&&dn?'push':pn?'bj':'lose');return bjLView(LBJ,'',0)}
@@ -2536,6 +2592,153 @@ function dcApply(m){
   re.textContent=m.roll.toFixed(2);re.className=m.win?'win':'lose';$('dcmark').style.left='calc('+m.roll+'% - 2px)';dcBusy=false;pf.gold=m.gold;net.me=pfKey();savePf();
   var tx=m.win?L('dc_win',{w:fm(m.pay-m.bet)}):L('dc_lose');dcMsg(tx);if(m.win)winSnd(m.pay-m.bet>=MAXB);else tone(260,120,.3,'sawtooth',.12);add(L('sys'),tx,true);dcRender()},50)}
 $('dcgo').onclick=dcRoll;$('dcclose').onclick=closeModal;$('dcrange').oninput=function(){if(!dcBusy){dcC=Math.max(1,Math.min(97,+this.value));dcRender()}};
+
+/* ===== CRASH (ZEPLİN) · ortak turlar ===== */
+var CR_K=.12,CRS={ph:'bet',id:0,end:0,t0:0,c:0,boomAt:0,hist:[],pl:[],cnt:0,tot:0,me:{st:'none',amt:0,auto:0,x:0,pay:0},msg:'',btn:''},crBet=100,crAuto=0,crRaf=0;
+function crMultAt(ms){return Math.min(1000,Math.floor(Math.exp(CR_K*ms/1000)*100)/100)}
+function crCur(){var n=performance.now();return CRS.ph==='fly'?crMultAt(n-CRS.t0):(CRS.ph==='crash'?CRS.c:1)}
+function crMsg(t){CRS.msg=t;var e=$('crmsg');if(e)e.textContent=t}
+function crNet(m){
+ if(m.a==='v'){var was=CRS.ph,now=performance.now();CRS.ph=m.ph;CRS.id=m.id;CRS.hist=m.hist||[];CRS.pl=m.pl||[];CRS.cnt=m.cnt|0;CRS.tot=m.tot|0;
+  if(m.ph==='fly')CRS.t0=now-m.el;else CRS.end=now+m.left;
+  if(m.ph==='crash'){CRS.c=m.c;if(was!=='crash'){CRS.boomAt=now;if(modal==='crash')tone(220,40,.6,'sawtooth',.22)}}
+  if(m.ph==='fly'&&was!=='fly'&&modal==='crash')tone(300,520,.25,'triangle',.12);
+  if(m.ph==='bet'&&was!=='bet')crMsg(L('cr_msg0'));
+  if(modal==='crash')crRender();return}
+ if(m.a==='me'){var o=CRS.me.st;CRS.me=m;if(m.gold!=null){pf.gold=m.gold;net.me=pfKey();savePf()}
+  if(m.st==='cash'&&o!=='cash'){var tx=L('cr_cash',{x:m.x,w:fm(m.pay-m.amt)});crMsg(tx);add(L('sys'),tx,true);winSnd(m.pay-m.amt>=MAXB)}
+  else if(m.st==='lost'&&o!=='lost'){crMsg(L('cr_lost'));add(L('sys'),L('cr_lost'),true)}
+  else if(m.st==='bet'&&o!=='bet'){crMsg(L('cr_placed',{a:fm(m.amt),u:m.auto?' · x'+m.auto.toFixed(2):''}));tone(600,860,.1,'triangle',.12)}
+  else if(m.void)crMsg(L('rerr_poor'));
+  if(modal==='crash')crRender();return}
+ if(m.a==='err'){if(m.gold!=null){pf.gold=m.gold;net.me=pfKey();savePf()}crMsg(L('rerr_'+m.c));if(modal==='crash')crRender()}}
+function crOpen(){if(!net.on){crMsg(L('rerr_offline'))}else{crMsg(CRS.msg||L('cr_msg0'));netSend({t:'cr',a:'sub'})}crRender();if(!crRaf)crRaf=requestAnimationFrame(crLoop)}
+function crLoop(){if(modal!=='crash'){crRaf=0;return}try{crDraw();crBtn()}catch(e){}crRaf=requestAnimationFrame(crLoop)}
+function crRender(){$('goldcr').textContent=fm(pf.gold);
+ var h=$('crhist');h.innerHTML='';CRS.hist.forEach(function(c){h.appendChild(el('span','crh '+(c<2?'g':c<10?'m':'h'),c.toFixed(2)+'x'))});
+ var pl=$('crpl');pl.innerHTML='';pl.appendChild(el('div','tiny',L('cr_players')+' · '+CRS.cnt+' · '+CIC+fm(CRS.tot)));
+ if(!CRS.pl.length)pl.appendChild(el('div','tiny',L('cr_none')));
+ CRS.pl.forEach(function(r){var d=el('div','crp'+(r[2]?' w':r[3]?' l':''));d.appendChild(el('span','',r[0]));var s=el('span','');s.innerHTML=CIC+fm(r[1])+' · '+(r[2]?'<b>x'+r[2].toFixed(2)+'</b> (+'+fm(Math.floor(r[1]*r[2])-r[1])+')':r[3]?'✕':'…');d.appendChild(s);pl.appendChild(d)});
+ var ph=CRS.ph,idle=ph==='bet';$('crautoin').disabled=!idle;
+ mkChips($('crchips'),function(){return crBet},function(v){if(CRS.ph==='bet'){crBet=v;crBtn(1)}},1,LIM.cr);
+ $('crrule').textContent=L('crrule');$('crcancel').style.display=(idle&&CRS.me.st==='bet')?'':'none';crBtn(1)}
+function crBtn(force){var ph=CRS.ph,me=CRS.me,b=$('crgo'),t,dis=false;
+ if(!net.on){t=L('rerr_offline');dis=true}
+ else if(ph==='bet'){t=L(me.st==='bet'?'crupd':'crgo')+' · '+CIC+fm(crBet);dis=crBet>pf.gold}
+ else if(ph==='fly'&&me.st==='in'){var cur=crCur();t=L('crcash')+' · x'+cur.toFixed(2)+' · '+CIC+fm(Math.floor(me.amt*cur));b.className='btn crcash'}
+ else{t=L(ph==='crash'?'crnext':'crwait');dis=true}
+ if(!(ph==='fly'&&me.st==='in'))b.className='btn';
+ var key=t+dis;if(!force&&key===CRS.btn)return;CRS.btn=key;b.innerHTML=t;b.disabled=dis;$('goldcr').textContent=fm(pf.gold)}
+function crAutoVal(){var v=parseFloat(String($('crautoin').value).replace(',','.'));return v>=1.01&&v<=1000?Math.round(v*100)/100:0}
+function crGo(){var ph=CRS.ph;if(!net.on)return;
+ if(ph==='bet'){if(crBet>pf.gold)return crMsg(L('rerr_poor'));if(pfKey()!==net.me){net.me=pfKey();netSend({t:'pf',eq:pf.eq,gold:pf.gold,owned:pf.owned})}crAuto=crAutoVal();netSend({t:'cr',a:'bet',amt:crBet,auto:crAuto})}
+ else if(ph==='fly'&&CRS.me.st==='in')netSend({t:'cr',a:'cash'})}
+function crZep(x,cx,cy,ang,sc,t,fl){var k;x.save();x.translate(cx,cy);x.rotate(ang);x.scale(sc,sc);
+ if(fl){var fg=x.createRadialGradient(-62,0,0,-62,0,26);fg.addColorStop(0,'rgba(255,190,80,.85)');fg.addColorStop(1,'rgba(255,90,30,0)');x.fillStyle=fg;x.beginPath();x.arc(-66-Math.random()*4,0,16+Math.random()*5,0,6.283);x.fill()}
+ x.fillStyle='#8a2a3a';[-1,1].forEach(function(sd){x.beginPath();x.moveTo(-40,0);x.lineTo(-62,sd*20);x.lineTo(-50,sd*3);x.closePath();x.fill()});
+ x.fillStyle='#3a2014';x.beginPath();x.moveTo(-12,17);x.lineTo(14,17);x.lineTo(11,29);x.lineTo(-9,29);x.closePath();x.fill();x.fillStyle='rgba(255,220,140,.9)';x.fillRect(-6,21,5,4);x.fillRect(2,21,5,4);
+ var bg=x.createLinearGradient(0,-22,0,22);bg.addColorStop(0,'#f6e3b0');bg.addColorStop(.5,'#c99a50');bg.addColorStop(1,'#6a4620');x.fillStyle=bg;x.beginPath();x.ellipse(0,0,54,21,0,0,6.283);x.fill();
+ x.strokeStyle='rgba(70,35,12,.45)';x.lineWidth=1.2;for(k=-3;k<=3;k++){x.beginPath();x.ellipse(k*14,0,4+Math.abs(k)*0.3,Math.sqrt(Math.max(0,1-Math.pow(k*14/54,2)))*21,0,0,6.283);x.stroke()}
+ x.fillStyle='rgba(180,30,50,.85)';x.fillRect(-30,-3,60,6);x.fillStyle='#fff3c8';x.font='700 7px sans-serif';x.textAlign='center';x.fillText('BLOODBET',0,2.6);
+ x.save();x.translate(-56,0);x.rotate(t/55);x.strokeStyle='rgba(255,255,255,.75)';x.lineWidth=2;x.beginPath();x.moveTo(0,-11);x.lineTo(0,11);x.stroke();x.restore();
+ x.restore()}
+function crDraw(){var cv=$('crcv');if(!cv)return;var x=cv.getContext('2d'),W=cv.width,H=cv.height,now=performance.now(),ph=CRS.ph,i;
+ var g=x.createLinearGradient(0,0,0,H);g.addColorStop(0,'#090d28');g.addColorStop(.62,'#1d1235');g.addColorStop(1,'#42121f');x.fillStyle=g;x.fillRect(0,0,W,H);
+ for(i=0;i<46;i++){var tw=.35+.65*Math.abs(Math.sin(now/900+i));x.fillStyle='rgba(255,255,255,'+(.3*tw)+')';x.fillRect((i*97)%W,(i*53)%(H*.7),2,2)}
+ var t=0,mult=1;if(ph==='fly'){t=now-CRS.t0;mult=crMultAt(t)}else if(ph==='crash'){mult=CRS.c;t=Math.log(Math.max(1,CRS.c))/CR_K*1000}
+ var tmax=Math.max(9000,t*1.12),mmax=Math.max(2.2,mult*1.2),L0=44,B0=H-30,PW=W-L0-34,PH=B0-30;
+ function px(tt){return L0+tt/tmax*PW}function py(m){return B0-(m-1)/(mmax-1)*PH}
+ x.font='11px sans-serif';x.textAlign='left';x.textBaseline='middle';
+ for(i=0;i<=4;i++){var gm=1+(mmax-1)*i/4,gy=py(gm);x.strokeStyle='rgba(255,255,255,.07)';x.lineWidth=1;x.beginPath();x.moveTo(L0,gy);x.lineTo(W-10,gy);x.stroke();x.fillStyle='rgba(255,255,255,.4)';x.fillText(gm.toFixed(gm<10?1:0)+'x',6,gy)}
+ var ex=px(0)+46,ey=py(1)-22+Math.sin(now/500)*4,ang=-.08;
+ if(ph!=='bet'){var n=Math.min(90,Math.max(2,Math.floor(t/90))),pts=[];for(i=0;i<=n;i++){var tt=t*i/n;pts.push([px(tt),py(Math.exp(CR_K*tt/1000))])}
+  var last=pts[pts.length-1];ex=last[0];ey=last[1];
+  var fg=x.createLinearGradient(0,ey,0,B0);fg.addColorStop(0,'rgba(255,190,90,.28)');fg.addColorStop(1,'rgba(255,90,60,0)');x.fillStyle=fg;x.beginPath();x.moveTo(pts[0][0],B0);pts.forEach(function(p){x.lineTo(p[0],p[1])});x.lineTo(ex,B0);x.closePath();x.fill();
+  x.strokeStyle=ph==='crash'?'#e0566b':'#ffd36b';x.lineWidth=3;x.lineJoin='round';x.beginPath();pts.forEach(function(p,j){j?x.lineTo(p[0],p[1]):x.moveTo(p[0],p[1])});x.stroke();
+  var dy=-(CR_K*mult/1000)/(mmax-1)*PH,dx=PW/tmax;ang=Math.atan2(dy,dx)*.9}
+ if(ph==='crash'){var e=now-CRS.boomAt,r=Math.min(80,12+e*.16),al=Math.max(0,1-e/1400);
+  var fb=x.createRadialGradient(ex,ey,0,ex,ey,r);fb.addColorStop(0,'rgba(255,240,180,'+al+')');fb.addColorStop(.4,'rgba(255,140,40,'+al*.9+')');fb.addColorStop(1,'rgba(200,30,20,0)');x.fillStyle=fb;x.beginPath();x.arc(ex,ey,r,0,6.283);x.fill();
+  for(i=0;i<14;i++){var a2=i*.449+.3,d2=e*.11*(.5+(i%5)*.22);x.fillStyle='rgba('+(i%2?255:240)+','+(120+i*8)+',60,'+al+')';x.fillRect(ex+Math.cos(a2)*d2-2,ey+Math.sin(a2)*d2+e*e*.00003*(i%3)-2,4,4)}}
+ else crZep(x,ex,ey,ang,1.05,now,ph==='fly');
+ x.textAlign='center';x.textBaseline='middle';var big,col='#fff';
+ if(ph==='bet'){var s=Math.max(0,(CRS.end-now)/1000);big=s.toFixed(1)+'s';col='#9ec8ff';x.font='700 26px sans-serif';x.fillStyle='rgba(255,255,255,.55)';x.fillText(L('cr_next'),W/2,H/2-34)}
+ else{big='x'+mult.toFixed(2);col=ph==='crash'?'#ff5a70':(mult>=10?'#ff7ad0':mult>=5?'#ff9a4a':mult>=2?'#ffd36b':'#ffffff')}
+ x.font='700 '+(ph==='bet'?44:64)+'px sans-serif';x.lineWidth=6;x.strokeStyle='rgba(0,0,0,.6)';x.strokeText(big,W/2,H/2);x.fillStyle=col;x.fillText(big,W/2,H/2);
+ if(ph==='crash'){x.font='700 24px sans-serif';x.fillStyle='#ff9aa8';x.fillText(L('cr_boomt'),W/2,H/2+44)}}
+$('crgo').onclick=crGo;$('crclose').onclick=closeModal;$('crcancel').onclick=function(){netSend({t:'cr',a:'cancel'})};
+$('crautoin').onkeydown=function(e){e.stopPropagation();if(e.key==='Enter')this.blur()};$('crautoin').onkeyup=function(e){e.stopPropagation()};
+
+/* ===== VAMPİR · balon mantığı: her emişte çarpan artar, insan ölürse bahis gider ===== */
+var VPMODES={low:[.05,.004],medium:[.11,.009],high:[.24,.022]},VPL={},VPS=null,vpBet=100,vpMode='medium',vpBusy=false,vpRaf=0;
+var VA={disp:0,tgt:0,bite:0,biteAt:0,dead:0,deadAt:0,cash:0,cashAt:0,drops:[]};
+function vpHazC(md,k){return Math.min(.9,VPMODES[md][0]+VPMODES[md][1]*(k-1))}
+function vpLad(md){if(VPL[md])return VPL[md];var l=[1],S=1,k,m;for(k=1;k<=60;k++){S*=1-vpHazC(md,k);m=Math.floor(.95/S*100)/100;if(m>1000)break;l.push(m)}VPL[md]=l;return l}
+function vpPlaying(){return !!(VPS&&VPS.st==='play')}
+function vpMsg(t){$('vpmsg').textContent=t}
+function vpRender(){var play=vpPlaying(),md=play?VPS.md:vpMode,lad=vpLad(md),k=play?VPS.k:0,idle=!play&&!vpBusy;$('goldvp').textContent=fm(pf.gold);
+ var tb=$('vpmode');tb.innerHTML='';['low','medium','high'].forEach(function(x){var b=el('button','tab'+(x===vpMode?' on':''),L('vp_'+x));b.disabled=!idle;b.onclick=function(){vpMode=x;VPS=null;VA.tgt=0;vpRender()};tb.appendChild(b)});
+ var st=$('vpstat');
+ if(play)st.textContent=L('vpstat',{m:VPS.mult,n:VPS.next,w:fm(Math.floor(VPS.bet*VPS.mult))});else st.textContent=L('vpidle',{n:lad[1]});
+ var ld=$('vplad');ld.innerHTML='';for(var i=Math.max(1,k-1);i<=Math.min(lad.length-1,k+6);i++)ld.appendChild(el('span',i===k?'on':(i<k?'done':''),'x'+lad[i]));
+ $('vpgo').innerHTML=L('vpgo')+' · '+CIC+fm(vpBet);$('vpgo').style.display=play?'none':'';$('vpgo').disabled=!idle||vpBet>pf.gold;
+ $('vppump').style.display=play?'':'none';$('vppump').disabled=vpBusy;$('vppump').textContent=L('vppump');
+ $('vpcash').style.display=play?'':'none';$('vpcash').disabled=vpBusy||!k;$('vpcash').innerHTML=L('vpcash')+(play&&k?' · '+CIC+fm(Math.floor(VPS.bet*VPS.mult)):'');
+ $('vprule').textContent=L('vprule');
+ mkChips($('vpchips'),function(){return vpBet},function(v){if(!vpPlaying()&&!vpBusy){vpBet=v;vpRender()}},1,LIM.vp)}
+function vpOpen(){if(!VPS)vpMsg(L('vpmsg0'));vpRender();if(!vpRaf)vpRaf=requestAnimationFrame(vpLoop)}
+function vpLoop(){if(modal!=='vamp'){vpRaf=0;return}try{vpDraw()}catch(e){}vpRaf=requestAnimationFrame(vpLoop)}
+function vpStart(){if(vpBusy||vpPlaying())return;if(vpBet>pf.gold)return vpMsg(L('rpoor'));vpBusy=true;VPS=null;VA.dead=0;VA.cash=0;VA.tgt=0;VA.disp=0;vpRender();vpMsg('…');tone(500,800,.1,'triangle',.12);
+ gSend('bet',{g:'vamp',a:vpBet,m:vpMode},vpApply,function(){return{err:'offline',gold:pf.gold}})}
+function vpPump(){if(vpBusy||!vpPlaying())return;vpBusy=true;vpRender();gSend('vp',{a:'pump'},vpApply,function(){return{err:'offline',gold:pf.gold}})}
+function vpCash(){if(vpBusy||!vpPlaying()||!VPS.k)return;vpBusy=true;vpRender();gSend('vp',{a:'cash'},vpApply,function(){return{err:'offline',gold:pf.gold}})}
+function vpApply(m){vpBusy=false;
+ if(!m||m.err){if(m&&m.gold!=null){pf.gold=m.gold;net.me=pfKey()}if(!m||m.err==='nogame'){VPS=null;VA.tgt=0}savePf();vpRender();vpMsg(L(m?'rerr_'+m.err:'rtimeout'));return}
+ var prev=VPS?VPS.k:0,now=performance.now();VPS=m;pf.gold=m.gold;net.me=pfKey();savePf();
+ var last=vpLad(m.md).length-1;VA.tgt=m.st==='dead'?Math.max(.3,m.k/last):m.k/last;
+ if(m.k>prev||m.st==='dead'){VA.bite=1;VA.biteAt=now;tone(160,90,.18,'sawtooth',.16);setTimeout(function(){tone(520,300,.08,'sine',.1)},120)}
+ if(m.st==='dead'){VA.dead=1;VA.deadAt=now;vpMsg(L('vp_dead'));setTimeout(function(){tone(180,50,.6,'sawtooth',.22)},200);add(L('sys'),L('vp_dead'),true)}
+ else if(m.st==='cash'){VA.cash=1;VA.cashAt=now;var tx=L(m.k>=last?'vpfinal':'vp_cash',{m:m.mult,w:fm(m.pay)});vpMsg(tx);winSnd(m.pay-m.bet>=MAXB);add(L('sys'),tx,true)}
+ else{vpMsg(L('vpplay'))}
+ vpRender()}
+function vpLerp(a,b,t){return Math.round(a+(b-a)*t)}
+function vpDraw(){var cv=$('vpcv');if(!cv)return;var x=cv.getContext('2d'),W=420,H=300,now=performance.now(),i;
+ VA.disp+=(VA.tgt-VA.disp)*.06;var d=VA.disp,dead=VA.dead;
+ var bgg=x.createRadialGradient(190,150,20,190,150,260);bgg.addColorStop(0,'#2a0d16');bgg.addColorStop(1,'#07030a');x.fillStyle=bgg;x.fillRect(0,0,W,H);
+ [[24,250],[300,262]].forEach(function(c,j){var fl=.7+.3*Math.sin(now/130+j*2)+.1*Math.sin(now/53+j);var cg=x.createRadialGradient(c[0],c[1]-14,0,c[0],c[1]-14,70);cg.addColorStop(0,'rgba(255,170,70,'+(.32*fl)+')');cg.addColorStop(1,'rgba(255,100,20,0)');x.fillStyle=cg;x.fillRect(c[0]-70,c[1]-84,140,140);
+  x.fillStyle='#e9dcc0';x.fillRect(c[0]-4,c[1]-4,8,28);x.fillStyle='#ffd070';x.beginPath();x.ellipse(c[0],c[1]-10,3,6+fl*2,0,0,6.283);x.fill()});
+ var sk0=[232,180,150],sk1=[206,214,218],sk=dead?[168,176,180]:[vpLerp(sk0[0],sk1[0],d),vpLerp(sk0[1],sk1[1],d),vpLerp(sk0[2],sk1[2],d)],skc='rgb('+sk.join(',')+')';
+ var shake=VA.bite>0?Math.sin(now/25)*3*VA.bite:0;if(dead)shake=0;
+ x.save();x.translate(shake,dead?Math.min(14,(now-VA.deadAt)/60):0);if(dead)x.rotate(Math.min(.22,(now-VA.deadAt)/3000));
+ x.fillStyle='#2b1a30';x.beginPath();x.ellipse(190,300,128,78,0,Math.PI,2*Math.PI);x.fill();x.fillStyle='#e8e0d8';x.beginPath();x.moveTo(168,222);x.lineTo(190,246);x.lineTo(178,262);x.closePath();x.fill();x.beginPath();x.moveTo(212,222);x.lineTo(190,246);x.lineTo(202,262);x.closePath();x.fill();
+ x.fillStyle=skc;x.fillRect(172,188,36,46);x.beginPath();x.ellipse(190,132,46,56,0,0,6.283);x.fill();x.beginPath();x.ellipse(144,136,7,12,0,0,6.283);x.fill();x.beginPath();x.ellipse(236,136,7,12,0,0,6.283);x.fill();
+ x.fillStyle='#2b1a14';x.beginPath();x.ellipse(190,112,50,44,0,Math.PI,2*Math.PI);x.fill();x.beginPath();x.moveTo(142,112);x.quadraticCurveTo(160,98,190,104);x.quadraticCurveTo(220,98,238,112);x.lineTo(238,92);x.lineTo(142,92);x.closePath();x.fill();
+ var fear=VA.bite>0?VA.bite:0,lid=dead?0:Math.min(.75,d*.85);
+ [172,208].forEach(function(ex2){
+  if(dead){x.strokeStyle='#3a0f18';x.lineWidth=3;x.beginPath();x.moveTo(ex2-7,126);x.lineTo(ex2+7,140);x.moveTo(ex2+7,126);x.lineTo(ex2-7,140);x.stroke()}
+  else{x.fillStyle='#fff';x.beginPath();x.ellipse(ex2,133,8,6+fear*3,0,0,6.283);x.fill();x.fillStyle='#2a3a5a';x.beginPath();x.arc(ex2+Math.sin(now/700)*1.5,133,3.2,0,6.283);x.fill();
+   if(lid>0){x.fillStyle=skc;x.fillRect(ex2-9,124,18,(10+fear*3)*lid+1)}
+   x.strokeStyle='#2b1a14';x.lineWidth=2.5;x.beginPath();x.moveTo(ex2-8,120-fear*3);x.lineTo(ex2+8,(ex2<190?116:124)-fear*3);x.stroke()}});
+ x.fillStyle='#7a1a24';if(dead){x.beginPath();x.ellipse(190,166,7,4,0,0,6.283);x.fill()}else if(fear>.15||d>.7){x.beginPath();x.ellipse(190,166,5+fear*4,3+fear*6,0,0,6.283);x.fill()}else{x.strokeStyle='#7a1a24';x.lineWidth=2.5;x.beginPath();x.moveTo(181,166);x.quadraticCurveTo(190,164,199,167);x.stroke()}
+ x.fillStyle='#b01426';[[214,198],[220,203]].forEach(function(b){x.beginPath();x.arc(b[0],b[1],2.4,0,6.283);x.fill()});
+ if(Math.random()<.05+d*.12&&VA.drops.length<10)VA.drops.push({x:216+Math.random()*6,y:204,v:.4+Math.random()*.5});
+ VA.drops=VA.drops.filter(function(p){p.y+=p.v;p.v+=.02;x.fillStyle='rgba(190,15,35,.9)';x.beginPath();x.ellipse(p.x,p.y,1.7,2.8,0,0,6.283);x.fill();return p.y<260});
+ x.restore();
+ if(VA.bite>0){var bt=(now-VA.biteAt)/520,bs=bt<1?Math.sin(bt*Math.PI):0;VA.bite=Math.max(0,1-bt);if(bs>0){var fx=300-bs*80;x.fillStyle='#4a0a14';x.beginPath();x.ellipse(fx+34,200,34,16,0,0,6.283);x.fill();x.fillStyle='#fff';[[0,0],[14,2]].forEach(function(f){x.beginPath();x.moveTo(fx+f[0]-3,194+f[1]);x.lineTo(fx+f[0]+6,194+f[1]);x.lineTo(fx+f[0]-13-bs*4,208+f[1]);x.closePath();x.fill()})}}
+ var tx0=336,ty0=44,tw=40,th=190,lvl=Math.min(1,d*.92+(VA.tgt>0?.04:0));
+ x.strokeStyle='rgba(255,200,200,.55)';x.lineWidth=3;x.beginPath();x.roundRect?x.roundRect(tx0,ty0,tw,th,14):x.rect(tx0,ty0,tw,th);x.stroke();
+ x.save();x.beginPath();x.roundRect?x.roundRect(tx0+2,ty0+2,tw-4,th-4,12):x.rect(tx0+2,ty0+2,tw-4,th-4);x.clip();
+ var fy=ty0+th-4-(th-8)*lvl,bl=x.createLinearGradient(0,fy,0,ty0+th);bl.addColorStop(0,'#ff2a46');bl.addColorStop(1,'#7a0614');x.fillStyle=bl;x.beginPath();x.moveTo(tx0,fy);for(i=0;i<=tw;i+=4)x.lineTo(tx0+i,fy+Math.sin(now/260+i*.35)*2);x.lineTo(tx0+tw,ty0+th);x.lineTo(tx0,ty0+th);x.closePath();x.fill();x.restore();
+ x.fillStyle='rgba(255,255,255,.3)';for(i=1;i<5;i++)x.fillRect(tx0+tw-9,ty0+th*i/5,9,2);
+ x.textAlign='left';x.textBaseline='top';x.font='700 34px sans-serif';x.lineWidth=5;x.strokeStyle='rgba(0,0,0,.65)';var mt='x'+(VPS&&VPS.mult?VPS.mult.toFixed(2):'1.00');x.strokeText(mt,14,12);x.fillStyle=dead?'#ff5a70':(VA.cash?'#ffd36b':'#fff');x.fillText(mt,14,12);
+ if(VPS&&VPS.k){x.font='600 13px sans-serif';x.fillStyle='rgba(255,255,255,.7)';x.fillText(VPS.k+'. '+L('vp_bite'),16,52)}
+ var ey0=262,eh=26;x.fillStyle='rgba(0,0,0,.5)';x.fillRect(16,ey0-eh/2-4,290,eh+8);x.strokeStyle=dead?'#8a8a8a':'#ff4a5e';x.lineWidth=2;x.beginPath();
+ var bpm=dead?0:Math.round(110-62*d),per=bpm?60/bpm:0;
+ for(i=0;i<=290;i+=2){var yy=ey0;if(per){var f=(((now/1000-i/70)/per)%1+1)%1;if(f<.08)yy=ey0-(f/.08)*eh*.45;else if(f<.14)yy=ey0-eh*.45+((f-.08)/.06)*eh*.73;else if(f<.2)yy=ey0+eh*.28*(1-(f-.14)/.06);else if(f>.4&&f<.5)yy=ey0-Math.sin((f-.4)/.1*Math.PI)*eh*.12}
+  i?x.lineTo(16+i,yy):x.moveTo(16+i,yy)}x.stroke();
+ x.font='700 12px sans-serif';x.fillStyle=dead?'#999':'#ff8a98';x.textAlign='right';x.fillText(dead?'0 BPM':bpm+' BPM',302,ey0-eh/2+2);
+ if(dead){var da=Math.min(.5,(now-VA.deadAt)/900*.5);x.fillStyle='rgba(120,0,15,'+da+')';x.fillRect(0,0,W,H);x.font='72px sans-serif';x.textAlign='center';x.textBaseline='middle';x.globalAlpha=Math.min(1,(now-VA.deadAt)/600);x.fillStyle='#f4eeee';x.fillText('☠',W/2+6,92);x.globalAlpha=1}
+ else if(VA.cash){var ca=Math.max(0,1-(now-VA.cashAt)/1600);for(i=0;i<14;i++){var a3=(now-VA.cashAt)/1000;x.fillStyle='rgba(255,215,90,'+ca+')';x.beginPath();x.arc(30+((i*53)%360),H-(a3*90+(i*37)%160)%H,3,0,6.283);x.fill()}}}
+$('vpgo').onclick=vpStart;$('vppump').onclick=vpPump;$('vpcash').onclick=vpCash;$('vpclose').onclick=closeModal;
 
 /* ===== COINFLIP ===== */
 var cfBet=100,cfSide='h',cfTab='house',cfBusy=false,cfLst=[],cfRot=0;
@@ -2864,8 +3067,8 @@ var key={},typing=false,go=false,paused=false,fallback=false,modal=null,nearWhee
 function lockOn(){return document.pointerLockElement===cv}
 function setPaused(v){paused=v;menu.style.display=v?'flex':'none';if(v)key={}}
 function lock(){try{var r=cv.requestPointerLock();if(r&&r.catch)r.catch(function(){fallback=true;setPaused(false)})}catch(e){fallback=true;setPaused(false)}}
-function openModal(n){modal=n;paused=true;key={};menu.style.display='none';$(n).style.display='flex';try{document.exitPointerLock()}catch(e){}if(n==='shop')renderShop();else if(n==='cases'){if(preset){cur=preset;preset=null;reelItems=[];renderCases();idleReel();$('cres').innerHTML='';updCase(false)}else{cur=null;renderCases()}}else if(n==='admin')renderAdmin();else if(n==='roul'){renderRoul();tbSend('roul',1,{bets:rAgg()})}else if(n==='wof'){renderWof();tbSend('wof',1,{a:wfBet})}else if(n==='bj'){bjOpen();tbSend('bj',1)}else if(n==='mines'){mnOpen();tbSend('mines',1)}else if(n==='towers')twOpen();else if(n==='dice'){dcRender();dcMsg(L('dcmsg0'))}else if(n==='cf')cfOpen();else if(n==='specv')specRender();else if(n==='plist')plRender();else if(n==='trade')trRender();else if(n==='dep')renderDep();else if(n==='gw'){renderGw();if(net.on)netSend({t:'gw',a:'list'})}else if(n==='rw'){renderRw();if(net.on)netSend({t:'rw',a:'info'})}else if(n==='btl')btOpen();else renderWheel()}
-function closeModal(){if(!modal)return;if(modal==='cases'&&cspin)return;if((modal==='roul'&&rSpin&&!net.on)||(modal==='wof'&&wfSpin)||(modal==='bj'&&(bjPlaying()||bjBusy))||(modal==='mines'&&(mnPlaying()||mnBusy))||(modal==='towers'&&(twPlaying()||twBusy))||(modal==='dice'&&dcBusy)||(modal==='cf'&&cfBusy))return;$(modal).style.display='none';if(SP[modal])tbSend(modal,0);if(modal==='specv')specOpen=null;if(modal==='trade'&&TR.on)netSend({t:'tr',a:'cancel'});if(modal==='admin')ADM.ask=0;modal=null;paused=false;lock()}
+function openModal(n){modal=n;paused=true;key={};menu.style.display='none';$(n).style.display='flex';try{document.exitPointerLock()}catch(e){}if(n==='shop')renderShop();else if(n==='cases'){if(preset){cur=preset;preset=null;reelItems=[];renderCases();idleReel();$('cres').innerHTML='';updCase(false)}else{cur=null;renderCases()}}else if(n==='admin')renderAdmin();else if(n==='roul'){renderRoul();tbSend('roul',1,{bets:rAgg()})}else if(n==='wof'){renderWof();tbSend('wof',1,{a:wfBet})}else if(n==='bj'){bjOpen();tbSend('bj',1)}else if(n==='mines'){mnOpen();tbSend('mines',1)}else if(n==='towers')twOpen();else if(n==='dice'){dcRender();dcMsg(L('dcmsg0'))}else if(n==='cf')cfOpen();else if(n==='crash')crOpen();else if(n==='vamp')vpOpen();else if(n==='specv')specRender();else if(n==='plist')plRender();else if(n==='trade')trRender();else if(n==='dep')renderDep();else if(n==='gw'){renderGw();if(net.on)netSend({t:'gw',a:'list'})}else if(n==='rw'){renderRw();if(net.on)netSend({t:'rw',a:'info'})}else if(n==='btl')btOpen();else renderWheel()}
+function closeModal(){if(!modal)return;if(modal==='cases'&&cspin)return;if((modal==='roul'&&rSpin&&!net.on)||(modal==='wof'&&wfSpin)||(modal==='bj'&&(bjPlaying()||bjBusy))||(modal==='mines'&&(mnPlaying()||mnBusy))||(modal==='towers'&&(twPlaying()||twBusy))||(modal==='dice'&&dcBusy)||(modal==='vamp'&&(vpPlaying()||vpBusy))||(modal==='cf'&&cfBusy))return;if(modal==='crash')netSend({t:'cr',a:'unsub'});$(modal).style.display='none';if(SP[modal])tbSend(modal,0);if(modal==='specv')specOpen=null;if(modal==='trade'&&TR.on)netSend({t:'tr',a:'cancel'});if(modal==='admin')ADM.ask=0;modal=null;paused=false;lock()}
 document.addEventListener('pointerlockchange',function(){if(!go)return;if(lockOn()){fallback=false;dragOff();if(!modal)setPaused(false)}else if(!fallback&&!modal)setPaused(true)});
 document.addEventListener('pointerlockerror',function(){fallback=true;if(!modal)setPaused(false)});
 $('resume').onclick=function(){setPaused(false);lock()};
@@ -2972,7 +3175,7 @@ addEventListener('keydown',function(e){
  if(typing){if(e.key==='Enter'){var tx=inp.value.trim();if(tx&&!handleChat(tx)){if(net.on)netSend({t:'chat',m:tx});else add(nick,tx)}inp.value='';inp.blur()}else if(e.key==='Escape'){inp.blur()}return}
  if(trReq&&(e.code==='KeyY'||e.code==='KeyN')){trAnswer(e.code==='KeyY');return}
  if(e.code===cfg.binds.players&&!e.repeat){e.preventDefault();openModal('plist');return}
- if(e.code==='KeyQ'&&!e.repeat&&inCas()&&nearTab>=0){specOpen=TABS[nearTab].k;openModal('specv');return}
+ if(e.code==='KeyQ'&&!e.repeat&&inCas()&&nearTab>=0&&TABS[nearTab].k!=='crash'&&TABS[nearTab].k!=='vamp'){specOpen=TABS[nearTab].k;openModal('specv');return}
  if(e.code==='KeyR'&&mode==='range'&&!roundOn&&!e.repeat){startRound();return}
  if(e.code==='KeyE'&&!e.repeat){if(inCas()&&nearTab>=0){BT.ar=TABS[nearTab].ar|0;openModal(TABS[nearTab].k);return}if(inCas()&&nearStand>=0){preset=CASES[nearStand];openModal('cases');return}if(mode){leaveMode();return}if(nearGift){openModal('gw');return}if(nearPortal&&!nearWheel){usePortal(nearPortal.k);return}}
  if(e.code===cfg.binds.panel){e.preventDefault();openModal('admin');return}

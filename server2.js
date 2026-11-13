@@ -111,7 +111,7 @@ function wallT(ox, oz, dx, dz) {                     // ışının arena duvarı
 const RED = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
 const WHEEL = [0, .5, 0, 2, 0, .5, 0, 1.5, 0, .5, 0, 3, 0, .5, 0, 2, 0, .5, 0, 1, 0, .5, 0, 10];   // 24 dilim, geri dönüş %93,75
 // oyun başına bahis üst sınırları (coin)
-const LIM = { bj: 100000, mn: 20000, tw: 20000, wof: 50000, rn: 5000, ro: 100000 };   // rn: rulette tek sayı, ro: rulette diğer alanlar (renk, tek/çift, düzine...)
+const LIM = { cr: 100000, vp: 20000, bj: 100000, mn: 20000, tw: 20000, wof: 50000, rn: 5000, ro: 100000 };   // rn: rulette tek sayı, ro: rulette diğer alanlar (renk, tek/çift, düzine...)
 function rouChk(bets) { const s = new Map(); for (const b of bets) { const id = b.k + '|' + b.v, t = (s.get(id) || 0) + b.a; if (t > (b.k === 'n' ? LIM.rn : LIM.ro)) return false; s.set(id, t); } return true; }
 const BET_KINDS = new Set(['n', 'red', 'black', 'odd', 'even', 'low', 'high', 'd1', 'd2', 'd3', 'c1', 'c2', 'c3']);
 const MIN_BET = 10, MAX_BET = 1e12, MAX_TOTAL = 1e12, BET_GAP = 3500, BIG_WIN = 3000;     // bahis üst sınırı yok (yalnızca bakiye ve taşma koruması)
@@ -344,7 +344,7 @@ const REQ = {"c1":0,"c2":1,"c3":2,"c4":3,"c5":4,"c6":5,"c7":7,"c8":8,"c9":9,"c10
 const TIERS = [5000, 15000, 40000, 90000, 180000, 350000, 650000, 1100000, 1800000, 3000000];   // Tier 1..10 için gereken toplam wager
 const tierOf = w => { let t = 0; while (t < TIERS.length && w >= TIERS[t]) t++; return t; };
 const RB_RATES = [0.05, 0.052, 0.054, 0.056, 0.058, 0.06, 0.062, 0.064, 0.066, 0.068, 0.07];   // rank (-,I..X) -> kasa avantajından geri dönen pay
-const EDGE = { roul: 0.051, mines: 0.07, wof: 0.0625, bj: 0.008, case: 0.04, towers: 0.06, dice: 0.05, cf: 0.02, cfp: 0.05 };   // gerçek kasa avantajları (rakeback / affiliate bunun üzerinden hesaplanır)                                    // oyun başına kasa avantajı
+const EDGE = { roul: 0.051, mines: 0.07, wof: 0.0625, bj: 0.008, case: 0.04, towers: 0.06, dice: 0.05, cf: 0.02, cfp: 0.05, crash: 0.05, vamp: 0.05 };   // gerçek kasa avantajları (rakeback / affiliate bunun üzerinden hesaplanır)                                    // oyun başına kasa avantajı
 // Haftalık bonus her pazartesi 06:00'da (TSİ), aylık bonus her ayın 1'inde 00:00'da (TSİ) yenilenir
 const BTZ = +process.env.DAY_TZ_H || 3, WK_HOUR = 6;
 const wkIdx = t => Math.floor(((t + (BTZ - WK_HOUR) * 36e5) / 864e5 + 3) / 7);                     // 1970-01-01 perşembe -> pazartesi tabanlı hafta no
@@ -805,7 +805,7 @@ function onMsg(c, txt) {
       if (prevZone === 'pit' && p.st[6] !== 'pit') btLeave(p);
       else if (prevZone !== 'pit' && p.st[6] === 'pit') p.conn.send({ t: 'bts', a: [btView(BT[0], now), btView(BT[1], now)] });
       if (prevZone !== 'casino' && p.st[6] === 'casino') p.conn.send({ t: 'tbls', tb: tblSnap(), rr: rrView() });
-      else if (prevZone === 'casino' && p.st[6] !== 'casino') { tblLeave(p); cfCancelAll(p); if (RR.ph === 'bet') { RR.bets.delete(p.id); rrInfo(now); } }
+      else if (prevZone === 'casino' && p.st[6] !== 'casino') { tblLeave(p); cfCancelAll(p); crLeave(p, now); if (RR.ph === 'bet') { RR.bets.delete(p.id); rrInfo(now); } }
       return;
     }
     case 'pf': return applyPf(p, m, now);
@@ -834,6 +834,8 @@ function onMsg(c, txt) {
     case 'tr': return trMsg(p, m, now);
     case 'bj': return bjAct(p, m, now);
     case 'mn': return mnAct(p, m, now);
+    case 'vp': return vpAct(p, m, now);
+    case 'cr': return crMsg(p, m, now);
     case 'tw': return twAct(p, m, now);
     case 'hub': return doHub(p.conn, m);
     case 'cf': return cfMsg(p, m, now);
@@ -1121,6 +1123,52 @@ function mnAct(p, m, now) {
   tx(p, mnView(g, 'play', null, 0, a.gold));
 }
 
+/* ---------- VAMPİR: balon mantığı. Her emişte çarpan artar, insan ölürse bahis gider. 3 mod, %95 geri dönüş ---------- */
+const VP_RTP = 0.95, VP_CAP = 1000, VP_MAXK = 60;
+const VP_MODES = { low: [0.05, 0.004], medium: [0.11, 0.009], high: [0.24, 0.022] };   // [ilk emişte ölüm şansı, her emişte artış]
+const vpHaz = (md, k) => Math.min(0.9, VP_MODES[md][0] + VP_MODES[md][1] * (k - 1));
+const VP_LAD = {};                                       // VP_LAD[mod][k] = k. emişten sonraki çarpan (k=0 → 1)
+for (const md of Object.keys(VP_MODES)) {
+  const l = [1]; let S = 1;
+  for (let k = 1; k <= VP_MAXK; k++) { S *= 1 - vpHaz(md, k); const m = Math.floor(VP_RTP / S * 100) / 100; if (m > VP_CAP) break; l.push(m); }   // sınırı aşacak adım eklenmez: son adımda otomatik çekilir
+  VP_LAD[md] = l;
+}
+function vpView(g, st, pay, gold) {
+  const lad = VP_LAD[g.md], k = g.k, last = k >= lad.length - 1;
+  return { t: 'vps', st, md: g.md, bet: g.bet, k, mult: lad[k], next: st === 'play' && !last ? lad[k + 1] : 0, pay: pay || 0, gold };
+}
+function vpFinish(p, now, st) {
+  const g = p.vp, a = p.acct;
+  const pay = st === 'cash' ? Math.floor(g.bet * VP_LAD[g.md][g.k]) : 0;
+  a.gold += pay; p.gold = a.gold; p.rewT = now; p.holdUntil = now + 3000; p.vp = null; saveUsers();
+  broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id);
+  if (pay - g.bet >= BIG_WIN) setTimeout(() => broadcast({ t: 'big', n: p.name, w: pay - g.bet, g: 'vamp' }), 1200);
+  return vpView(g, st, pay, a.gold);
+}
+function vpStart(p, m, now) {
+  const a = p.acct, c = p.conn, bet = Math.floor(Number(m.a)), md = String(m.m);
+  if (!(bet >= MIN_BET && bet <= MAX_BET) || !VP_MODES[md]) return;
+  if (bet > LIM.vp) return c.send({ t: 'berr', c: 'max', gold: a.gold });
+  if (bet > a.gold) return c.send({ t: 'berr', c: 'poor', gold: a.gold });
+  p.betT = now + MN_GAP; p.holdUntil = now + 8000;
+  a.gold -= bet; p.gold = a.gold; wagerAdd(a, bet, 'vamp');
+  p.vp = { bet, md, k: 0 };
+  saveUsers();
+  c.send(vpView(p.vp, 'play', 0, a.gold));
+}
+function vpAct(p, m, now) {
+  const g = p.vp, c = p.conn, a = p.acct;
+  if (!g) return c.send({ t: 'berr', c: 'nogame', gold: a.gold });
+  if (now < (p.vpT || 0)) return;
+  p.vpT = now + 200; p.holdUntil = now + 8000;
+  if (m.a === 'cash') { if (!g.k) return; return c.send(vpFinish(p, now, 'cash')); }
+  if (m.a !== 'pump') return;
+  if (crypto.randomInt(0, 1e9) / 1e9 < vpHaz(g.md, g.k + 1)) return c.send(vpFinish(p, now, 'dead'));
+  g.k++;
+  if (g.k >= VP_LAD[g.md].length - 1) return c.send(vpFinish(p, now, 'cash'));
+  c.send(vpView(g, 'play', 0, a.gold));
+}
+
 /* ---------- KASALAR: içinden coin çıkar, sonuç sunucuda belirlenir (RTP ~%93) ---------- */
 const CASE_TBL = [{"p":230,"o":[70,25,5,0,0],"z":[[80,0],[134,0],[187,0],[241,1],[321,1],[401,1],[535,2],[937,2],[1338,2]],"w":[70,70,70,25,25,25,5,5,5]},{"p":450,"o":[45,35,17,3,0],"z":[[94,0],[165,0],[236,0],[283,1],[378,1],[496,1],[614,2],[850,2],[1133,2],[1416,3],[2361,3],[3777,3]],"w":[45,45,45,35,35,35,17,17,17,3,3,3]},{"p":750,"o":[20,40,30,9,1],"z":[[77,0],[128,0],[179,0],[204,1],[306,1],[434,1],[510,2],[765,2],[1020,2],[1275,3],[2040,3],[3060,3],[6120,4],[12751,4],[25502,4]],"w":[20,20,20,40,40,40,30,30,30,9,9,9,1,1,1]},{"p":1350,"o":[5,25,40,25,5],"z":[[64,0],[96,0],[129,0],[161,1],[257,1],[386,1],[450,2],[643,2],[900,2],[1157,3],[1799,3],[2892,3],[4499,4],[7712,4],[16066,4]],"w":[5,5,5,25,25,25,40,40,40,25,25,25,5,5,5]},{"p":2250,"o":[0,10,30,40,20],"z":[[129,1],[194,1],[290,1],[323,2],[484,2],[710,2],[904,3],[1420,3],[2259,3],[3227,4],[5809,4],[11618,4]],"w":[10,10,10,30,30,30,40,40,40,20,20,20]}];   // p: fiyat · o: bant yüzdeleri · z: [ödül, bant] · w: ağırlık
 const CASE_GAP = 6000;
@@ -1129,7 +1177,7 @@ function caseMsg(p, m, now) {
   if (m.a !== 'open') return;
   if (p.st[6] !== 'casino') return c.send({ t: 'berr', c: 'zone', gold: a.gold });
   if (now < (p.caseT || 0) || now < p.betT) return c.send({ t: 'berr', c: 'fast', gold: a.gold });
-  if (p.bj || p.mn || p.tw) return c.send({ t: 'berr', c: 'busy', gold: a.gold });
+  if (p.bj || p.mn || p.tw || p.vp || crIn(p)) return c.send({ t: 'berr', c: 'busy', gold: a.gold });
   const i = Math.floor(Number(m.i)), cs = CASE_TBL[i];
   if (!cs) return;
   if (cs.p > a.gold) return c.send({ t: 'berr', c: 'poor', gold: a.gold });
@@ -1420,6 +1468,8 @@ function gamesAbort(p) {            // oyuncu bağlantısı koptuysa açık elle
     if (p.bj) bjStand(p, now);
     if (p.mn) { if (p.mn.rev.length) mnFinish(p, now, 'cash'); else { p.acct.gold += p.mn.bet; p.gold = p.acct.gold; p.mn = null; saveUsers(); } }
     if (p.tw) { if (p.tw.picks.length) twFinish(p, now, 'cash'); else { p.acct.gold += p.tw.bet; p.gold = p.acct.gold; p.tw = null; saveUsers(); } }
+    if (p.vp) { if (p.vp.k) vpFinish(p, now, 'cash'); else { p.acct.gold += p.vp.bet; p.gold = p.acct.gold; p.vp = null; saveUsers(); } }
+    crLeave(p, now);
     cfCancelAll(p, true);
     btLeave(p);
   } catch (e) { }
@@ -1429,7 +1479,8 @@ function doBet(p, m, now) {
   const a = p.acct, c = p.conn;
   if (p.st[6] !== 'casino') return c.send({ t: 'berr', c: 'zone', gold: a.gold });
   if (now < p.betT) return c.send({ t: 'berr', c: 'fast', gold: a.gold });
-  if (p.bj || p.mn || p.tw) return c.send({ t: 'berr', c: 'busy', gold: a.gold });
+  if (p.bj || p.mn || p.tw || p.vp || crIn(p)) return c.send({ t: 'berr', c: 'busy', gold: a.gold });
+  if (m.g === 'vamp') return vpStart(p, m, now);
   if (m.g === 'towers') return twStart(p, m, now);
   if (m.g === 'dice') return diceBet(p, m, now);
   if (m.g === 'cf') return cfHouse(p, m, now);
@@ -1542,6 +1593,108 @@ function rrSettle(now) {
   rrCast();
 }
 setInterval(() => { const now = Date.now(); if (now < RR.end) return; if (RR.ph === 'bet') rrLock(now); else rrSettle(now); }, 250);
+
+/* ---------- CRASH (ZEPPELIN): herkes aynı turda; çarpan yükselir, zeplin patlamadan çekersen kazanırsın. %95 geri dönüş ---------- */
+const CR_EDGE = 0.05, CR_K = 0.12, CR_BET = +process.env.CR_BET_MS || 8000, CR_HOLD = 3500, CR_CAP = 1000;
+const CR = { ph: 'bet', id: 1, end: Date.now() + CR_BET, t0: 0, tc: 0, c: 1, bets: new Map(), hist: [], subs: new Set(), infoT: 0, infoQ: 0 };
+const crMult = ms => Math.min(CR_CAP, Math.floor(Math.exp(CR_K * ms / 1000) * 100) / 100);
+function crPoint() {                                     // çökme noktası: P(c >= x) = 0.95 / x
+  const r = crypto.randomInt(0, 2 ** 40) / 2 ** 40;
+  const c = Math.floor(100 * (1 - CR_EDGE) / (1 - r)) / 100;
+  return c < 1 ? 1 : Math.min(CR_CAP, c);
+}
+function crSend(p, o) { if (players.get(p.id) === p) p.conn.send(o); }
+function crView() {
+  const pl = []; let tot = 0;
+  for (const e of CR.bets.values()) { if (e.st !== 'void') { tot += e.amt; pl.push([e.p.name, e.amt, e.st === 'cash' ? e.x : 0, e.st === 'lost' ? 1 : 0]); } }
+  pl.sort((a, b) => b[1] - a[1]);
+  const now = Date.now();
+  return { t: 'cr', a: 'v', ph: CR.ph, id: CR.id, now, left: CR.ph === 'fly' ? 0 : Math.max(0, CR.end - now), el: CR.ph === 'fly' ? now - CR.t0 : 0, c: CR.ph === 'crash' ? CR.c : 0, hist: CR.hist.slice(0, 16), pl: pl.slice(0, 40), cnt: pl.length, tot };
+}
+function crMe(p) {
+  const e = CR.bets.get(p.id);
+  return { t: 'cr', a: 'me', st: e ? e.st : 'none', amt: e ? e.amt : 0, auto: e ? e.auto : 0, x: e && e.st === 'cash' ? e.x : 0, pay: e && e.st === 'cash' ? e.pay : 0, gold: p.acct.gold };
+}
+function crCast() {
+  const v = crView();
+  for (const id of CR.subs) { const q = players.get(id); if (q) q.conn.send(v); else CR.subs.delete(id); }
+}
+function crInfo(now) {
+  if (now - CR.infoT < 300) { if (!CR.infoQ) CR.infoQ = setTimeout(() => { CR.infoQ = 0; CR.infoT = Date.now(); crCast(); }, 320); return; }
+  CR.infoT = now; crCast();
+}
+function crPay(e, x, now) {
+  const pay = Math.floor(e.amt * x);
+  e.st = 'cash'; e.x = x; e.pay = pay;
+  e.acct.gold += pay; e.p.gold = e.acct.gold; e.p.rewT = now; e.p.holdUntil = now + 2500;
+  saveUsers();
+  crSend(e.p, crMe(e.p));
+  broadcast({ t: 'me', id: e.p.id, eq: e.p.eq, gold: e.p.gold }, e.p.id);
+  if (pay - e.amt >= BIG_WIN) broadcast({ t: 'big', n: e.p.name, w: pay - e.amt, g: 'crash' });
+}
+function crLock(now) {
+  CR.c = crPoint(); CR.tc = Math.log(CR.c) / CR_K * 1000;
+  for (const e of CR.bets.values()) {
+    if (e.amt > e.acct.gold) { e.st = 'void'; crSend(e.p, Object.assign(crMe(e.p), { void: 1 })); continue; }
+    e.acct.gold -= e.amt; wagerAdd(e.acct, e.amt, 'crash'); e.p.gold = e.acct.gold; e.p.holdUntil = now + CR.tc + 9000; e.st = 'in';
+    crSend(e.p, crMe(e.p));
+  }
+  saveUsers();
+  CR.ph = 'fly'; CR.t0 = now; CR.end = now + CR.tc;
+  crCast();
+}
+function crCrash(now) {
+  CR.ph = 'crash'; CR.end = now + CR_HOLD;
+  CR.hist.unshift(CR.c); CR.hist = CR.hist.slice(0, 20);
+  for (const e of CR.bets.values()) if (e.st === 'in') { e.st = 'lost'; e.p.holdUntil = now + 2500; e.p.rewT = now; crSend(e.p, crMe(e.p)); }
+  crCast();
+}
+function crNext(now) { CR.bets.clear(); CR.id++; CR.ph = 'bet'; CR.end = now + CR_BET; CR.c = 1; crCast(); for (const id of CR.subs) { const q = players.get(id); if (q) q.conn.send(crMe(q)); } }
+function crTick() {
+  const now = Date.now();
+  if (CR.ph === 'bet') { if (now >= CR.end) crLock(now); return; }
+  if (CR.ph === 'crash') { if (now >= CR.end) crNext(now); return; }
+  const el = now - CR.t0;
+  for (const e of CR.bets.values()) if (e.st === 'in' && e.auto >= 1 && e.auto <= CR.c && Math.log(e.auto) / CR_K * 1000 <= el) { crPay(e, e.auto, now); crInfo(now); }
+  if (el >= CR.tc) crCrash(now);
+}
+setInterval(crTick, 50);
+function crLeave(p, now) {                               // oyuncu çıktı: bahis turunda iptal, uçuştaysa mevcut çarpanla çek
+  CR.subs.delete(p.id);
+  const e = CR.bets.get(p.id);
+  if (!e) return;
+  if (CR.ph === 'bet') { CR.bets.delete(p.id); crInfo(now); }
+  else if (CR.ph === 'fly' && e.st === 'in') { const el = now - CR.t0; if (el < CR.tc) { crPay(e, crMult(el), now); crInfo(now); } }
+}
+const crIn = p => { const e = CR.bets.get(p.id); return !!(e && e.st === 'in' && CR.ph === 'fly'); };
+function crMsg(p, m, now) {
+  const a = p.acct, c = p.conn, act = String(m.a || '');
+  const err = code => c.send({ t: 'cr', a: 'err', c: code, gold: a.gold });
+  if (act === 'sub') { CR.subs.add(p.id); c.send(crView()); c.send(crMe(p)); return; }
+  if (act === 'unsub') { CR.subs.delete(p.id); return; }
+  if (now < (p.crT || 0)) return; p.crT = now + 120;
+  if (act === 'cash') {
+    const e = CR.bets.get(p.id);
+    if (!e || e.st !== 'in' || CR.ph !== 'fly') return;
+    const el = now - CR.t0;
+    if (el >= CR.tc) return;                             // zeplin zaten patlamış sayılır
+    crPay(e, crMult(el), now); crInfo(now); return;
+  }
+  if (act === 'cancel') { if (CR.ph !== 'bet') return err('closed'); CR.bets.delete(p.id); c.send(crMe(p)); crInfo(now); return; }
+  if (act !== 'bet') return;
+  if (p.st[6] !== 'casino') return err('zone');
+  if (CR.ph !== 'bet') return err('closed');
+  if (p.bj || p.mn || p.tw || p.vp) return err('busy');
+  const amt = Math.floor(Number(m.amt));
+  if (!(amt >= MIN_BET && amt <= MAX_BET)) return;
+  if (amt > LIM.cr) return err('max');
+  if (amt > a.gold) return err('poor');
+  let auto = Math.round(Number(m.auto) * 100) / 100;
+  if (!(auto >= 1.01 && auto <= CR_CAP)) auto = 0;
+  CR.bets.set(p.id, { p, acct: a, amt, auto, st: 'bet', x: 0, pay: 0 });
+  c.send(crMe(p)); crInfo(now);
+}
+
 
 /* ---------- COIN SATIN ALMA (elle onaylı kripto) ----------
  * 1$ = 100 coin · her yatırımdan %2 komisyon · çekim YOK, coin gerçek para değildir.
@@ -2024,7 +2177,7 @@ function trMsg(p, m, now) {
   const a = String(m.a || '');
   if (a === 'req') {
     const t = players.get(Number(m.id));
-    if (!t || t === p || p.tr || t.tr || p.bj || p.mn || t.bj || t.mn) return p.conn.send({ t: 'tr', a: 'msg', c: 'busy' });
+    if (!t || t === p || p.tr || t.tr || p.bj || p.mn || t.bj || t.mn || p.vp || t.vp || crIn(p) || crIn(t)) return p.conn.send({ t: 'tr', a: 'msg', c: 'busy' });
     if (now - (p.trReqT || 0) < 3000) return;
     p.trReqT = now; t.trReq = { from: p.id, t: now };
     t.conn.send({ t: 'tr', a: 'req', id: p.id, n: p.name });
@@ -2035,7 +2188,7 @@ function trMsg(p, m, now) {
     if (!f || !p.trReq || p.trReq.from !== f.id || now - p.trReq.t > 30000) return;
     p.trReq = null;
     if (a === 'dec') return f.conn.send({ t: 'tr', a: 'msg', c: 'declined', n: p.name });
-    if (p.tr || f.tr || p.bj || p.mn || f.bj || f.mn) return;
+    if (p.tr || f.tr || p.bj || p.mn || f.bj || f.mn || p.vp || f.vp || crIn(p) || crIn(f)) return;
     const s = { sid: nextSid++, a: f, b: p, o: {}, to: 0 };
     s.o[f.id] = { items: [], gold: 0, ok: false }; s.o[p.id] = { items: [], gold: 0, ok: false };
     s.to = setTimeout(() => trEnd(s, 'timeout'), 300000);
@@ -2413,7 +2566,7 @@ function wdMsg(p, m, now) {
   if (!((a.depC || 0) > 0)) return err('nodep');
   if (owes(a) > 0) return err('wreq', { n: owes(a) });
   if (now - (a.created || 0) < WD_AGE_MS) return err('age', { left: (a.created || 0) + WD_AGE_MS - now });
-  if (p.bj || p.mn || p.tw || p.tr) return err('busy');
+  if (p.bj || p.mn || p.tw || p.vp || p.tr || crIn(p)) return err('busy');
   const addr = String(m.addr || '').trim();
   if (!tronOk(addr)) return err('addr');
   const coins = Math.floor(Number(m.coins));
