@@ -1973,7 +1973,7 @@ function rngMsg(p, m, now) {
  * Herkes başlatabilir: ödül başlatırken host'un bakiyesinden düşer (owner dahil; owner sadece wager/aktarım limitinden muaf). Süre, kazanan sayısı ve minimum tier ayarlanır.
  * Süre dolunca kazananlar sunucu tarafından rastgele seçilir; ödül eşit bölünür, artan/katılımcısız kısım host'a iade edilir.
  */
-const GW_MAX_ACTIVE = 8, GW_MIN_S = +process.env.GW_MIN_S || 30, GW_MAX_S = 7 * 86400, GW_MAX_WIN = 50;
+const GW_MAX_ACTIVE = +process.env.GW_MAX_ACTIVE || 20, GW_MIN_PRIZE = +process.env.GW_MIN_PRIZE || 200, GW_MIN_S = +process.env.GW_MIN_S || 30, GW_MAX_S = 7 * 86400, GW_MAX_WIN = 50;
 const gws = Object.create(null), GW_FILE = path.join(DATA_DIR, 'giveaways.json');
 try { Object.assign(gws, JSON.parse(fs.readFileSync(GW_FILE, 'utf8')) || {}); } catch (e) { }
 function gwSave() {
@@ -1996,13 +1996,12 @@ function gwMsg(p, m, now) {
   if (act === 'list') return c.send({ t: 'gw', a: 'list', list: gwList(key), bal: a.gold });
   if (act === 'new') {
     const prize = Math.floor(Number(m.prize)), win = Math.floor(Number(m.win)), secs = Math.floor(Number(m.secs)), tier = Math.floor(Number(m.tier) || 0);
-    if (!(prize >= 1 && prize <= 1e12)) return err('prize');
+    if (!(prize >= GW_MIN_PRIZE && prize <= 1e12)) return err('prize');
     if (!(win >= 1 && win <= GW_MAX_WIN) || prize < win) return err('win');
     if (!(secs >= GW_MIN_S && secs <= GW_MAX_S)) return err('time');
     if (!(tier >= 0 && tier <= TIERS.length)) return err('tier');
     const act2 = Object.values(gws);
     if (act2.length >= GW_MAX_ACTIVE) return err('full');
-    if (act2.some(g => g.hk === key)) return err('mine');
     const owner = p.role === 'owner';
     if (!owner && owes(a) > 0) return err('wreq');
     if (prize > a.gold) return err('poor');
