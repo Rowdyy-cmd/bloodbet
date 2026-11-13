@@ -291,7 +291,7 @@ async function loadRemote() {
   for (let i = 0; i + 1 < res.length; i += 2) {
     try { users[res[i]] = JSON.parse(res[i + 1]); lastSaved[res[i]] = res[i + 1]; } catch (e) { }
   }
-  await loadDepsRemote(); await loadGwRemote(); await loadLogsRemote();
+  await loadDepsRemote(); await loadGwRemote(); await loadLogsRemote(); await loadWdsRemote();
   log('veritabanından', Object.keys(users).length, 'hesap yüklendi');
 }
 async function flushRemote() {              // sadece değişen hesapları yazar
@@ -354,16 +354,18 @@ const moNext = t => { const d = new Date(t + BTZ * 36e5); return Date.UTC(d.getU
 const WK_PCT = 0.0005, MO_PCT = 0.001, AFF_PCT = 0.03;   // AFF_PCT: davetlinin coin satın alımından anında verilen pay
 // Affiliate: davet edilen oyuncunun her bahsinde, o bahsin kasa avantajının AFF_SHARE kadarı davet edene birikir (AFF_WAG_SHARE ile ayarlanır, varsayılan 0.10 = %10)
 const AFF_SHARE = (process.env.AFF_WAG_SHARE || '') !== '' && Number.isFinite(+process.env.AFF_WAG_SHARE) ? Math.min(0.5, Math.max(0, +process.env.AFF_WAG_SHARE)) : 0.10;
+const owes = a => Math.ceil(a.wreq || 0);      // yatırım wager şartından kalan (coin); 0 = şart yok / tamamlandı
 function wagerAdd(a, n, g) {
   if (!(n > 0)) return;
   const old = a.wag || 0, nw = old + n, now = Date.now();
   a.wag = nw;
+  if ((a.wreq || 0) > 0) a.wreq = Math.max(0, a.wreq - n);
   a.rb = (a.rb || 0) + n * (EDGE[g] || 0.05) * RB_RATES[tierOf(nw)];
   a.wkW = (a.wkW || 0) + n; a.moW = (a.moW || 0) + n;
   const rf = a.ref && AFF_SHARE > 0 ? users[a.ref] : null;
   if (rf && rf !== a) { const c = n * (EDGE[g] || 0.05) * AFF_SHARE; rf.affPend = (rf.affPend || 0) + c; a.affW = (a.affW || 0) + n; a.affC = (a.affC || 0) + c; }
   const q = onlineAcct(a);
-  if (q) q.conn.send({ t: 'wag', w: nw, tier: tierOf(nw), up: tierOf(nw) > tierOf(old) ? 1 : 0 });
+  if (q) q.conn.send({ t: 'wag', w: nw, tier: tierOf(nw), up: tierOf(nw) > tierOf(old) ? 1 : 0, wr: owes(a) });
   if (q && tierOf(nw) > tierOf(old)) broadcast({ t: 'rank', id: q.id, tr: tierOf(nw) }, q.id);
 }
 function rwInfo(a) {
@@ -409,7 +411,7 @@ function ownedOf(a) {                  // eski satın alınanlar + rank'ın açt
   for (const id in REQ) if (REQ[id] <= t) set.add(id);
   return [...set];
 }
-const pubPf = a => ({ gold: a.gold, owned: ownedOf(a), eq: a.eq, wag: a.wag || 0 });
+const pubPf = a => ({ gold: a.gold, owned: ownedOf(a), eq: a.eq, wag: a.wag || 0, wreq: owes(a) });
 const loginTries = new Map();   // ip -> zaman damgaları
 const regTries = new Map();
 const mailTries = new Map();    // ip -> e-posta gönderim zamanları
@@ -824,6 +826,7 @@ function onMsg(c, txt) {
     case 'rb': return rrBets(p, m, now);
     case 'tip': return doTip(p, m, now);
     case 'dep': return depMsg(p, m, now);
+    case 'wd': return wdMsg(p, m, now);
     case 'rw': return rwMsg(p, m, now);
     case 'rng': return rngMsg(p, m, now);
     case 'dw': return dwMsg(p, m, now);
@@ -1586,11 +1589,12 @@ const NP_CUR = { TRX: ['trx', 'TRON'], BTC: ['btc', 'Bitcoin'], ETH: ['eth', 'ER
   USDT: [NP_USDT, /erc20$/.test(NP_USDT) ? 'ERC20' : /bsc$|bep20$/.test(NP_USDT) ? 'BEP20' : 'TRC20'],
   USDTB: ['usdtbsc', 'BEP20'], USDTS: ['usdtsol', 'Solana'], USDTP: ['usdtmatic', 'Polygon'],
   LTC: ['ltc', 'Litecoin'], SOL: ['sol', 'Solana'], XRP: ['xrp', 'XRP Ledger'], DOGE: ['doge', 'Dogecoin'] };
-async function npCall(method, p, body) {
-  const r = await fetch(NP_API + p, { method, headers: { 'x-api-key': NP_KEY, 'Content-Type': 'application/json' },
+async function npCall(method, p, body, jwt) {
+  const hd = { 'x-api-key': NP_KEY, 'Content-Type': 'application/json' }; if (jwt) hd.Authorization = 'Bearer ' + jwt;
+  const r = await fetch(NP_API + p, { method, headers: hd,
     body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(15000) });
   const txt = await r.text(); let j = null; try { j = JSON.parse(txt); } catch (e) { }
-  if (!r.ok) { const e = new Error('NOWPayments ' + r.status + ' ' + txt.slice(0, 200)); e.np = j && j.code; throw e; }
+  if (!r.ok) { const e = new Error('NOWPayments ' + r.status + ' ' + txt.slice(0, 200)); e.np = j && j.code; e.status = r.status; throw e; }
   return j;
 }
 const npRound = f => Math.ceil(f * 1.03 * 10) / 10;   // minimuma %3 pay, 0,1 dolara yukarı yuvarla (9,08 -> 9,4)
@@ -1628,6 +1632,7 @@ function depCredit(d, coins, by) {     // yatırımı hesaba işler (tek seferli
   const full = d.coinsFull || d.coins;
   d.coinsFull = full; d.st = 'ok'; d.upd = Date.now(); d.by = by; d.coins = coins; depSave(d);      // önce durumu kaydet: iki kez yatmasın
   t.gold += coins; t.depC = (t.depC || 0) + Math.round(d.usdC * coins / full);
+  t.wreq = (t.wreq || 0) + coins; t.depT = Date.now(); t.depN = (t.depN || 0) + 1;      // wager şartı: yatan coin kadar bahis oynanmalı
   const rf = t.ref && users[t.ref];
   if (rf) { const com = Math.floor(coins * AFF_PCT); if (com > 0) { rf.gold += com; rf.affEarn = (rf.affEarn || 0) + com; const rq = onlineAcct(rf); if (rq) { rq.gold = rf.gold; pfSync(rq, { m: 'aff', n: com, who: t.name }); } } }
   saveUsers(true);
@@ -1780,6 +1785,7 @@ function dwMsg(p, m, now) {                          // günlük çark: en az Ti
   if (act === 'reset') { if (p.role !== 'owner') return; a.dwT = 0; saveUsers(); return c.send({ t: 'dw', a: 'info', tier, left: 0, min: DW_MIN_TIER }); }
   if (act !== 'spin') return;
   if (tier < DW_MIN_TIER) return c.send({ t: 'dw', a: 'tier', tier, min: DW_MIN_TIER });
+  if (p.role !== 'owner' && owes(a) > 0) return c.send({ t: 'dw', a: 'wreq', need: owes(a), tier, min: DW_MIN_TIER });
   if (a.dwT && left > 0) return c.send({ t: 'dw', a: 'wait', left, tier, min: DW_MIN_TIER });
   let x = crypto.randomInt(0, DW_R.reduce((t, v) => t + DW_W[v], 0)), idx = 0;
   for (let i = 0; i < DW_R.length; i++) { x -= DW_W[DW_R[i]]; if (x < 0) { idx = i; break; } }
@@ -1845,6 +1851,7 @@ function gwMsg(p, m, now) {
     if (act2.some(g => g.hk === key)) return err('mine');
     const owner = p.role === 'owner';
     if (!owner) {
+      if (owes(a) > 0) return err('wreq');
       if (prize > a.gold) return err('poor');
       if (!xferTake(a, prize)) return err('cap');           // başkalarına coin dağıtmak da günlük aktarım limitine sayılır
       a.gold -= prize; p.gold = a.gold;
@@ -1946,6 +1953,7 @@ function doTipMulti(p, m, now) {                   // herkese / yakındakilere: 
   if (!rec.length) return p.conn.send({ t: 'tr', a: 'msg', c: near ? 'nonear' : 'noone' });
   const tot = n * rec.length, free = p.role === 'owner';
   if (tot > p.acct.gold) return p.conn.send({ t: 'berr', c: 'poor', gold: p.acct.gold });
+  if (!free && owes(p.acct) > 0) return p.conn.send({ t: 'tr', a: 'msg', c: 'wreq', n: owes(p.acct) });
   if (!free && (n > TIP_MAX || !xferTake(p.acct, tot))) return p.conn.send({ t: 'tr', a: 'msg', c: 'xfcap', g: TIP_MAX, d: XFER_DAY });
   p.tipT = now;
   p.acct.gold -= tot; p.gold = p.acct.gold;
@@ -1963,6 +1971,7 @@ function doTip(p, m, now) {
   if (now - (p.tipT || 0) < 1000) return;
   if (p.tr) return p.conn.send({ t: 'tr', a: 'msg', c: 'intrade' });
   const free = p.role === 'owner' || t.role === 'owner';
+  if (!free && owes(p.acct) > 0) return p.conn.send({ t: 'tr', a: 'msg', c: 'wreq', n: owes(p.acct) });
   if (!free && (n > TIP_MAX || !xferTake(p.acct, n))) return p.conn.send({ t: 'tr', a: 'msg', c: 'xfcap', g: TIP_MAX, d: XFER_DAY });
   if (n > p.acct.gold) return p.conn.send({ t: 'berr', c: 'poor', gold: p.acct.gold });
   p.tipT = now;
@@ -1994,6 +2003,7 @@ function trExec(s) {
   if (!trValid(s)) return trEnd(s, 'fail');
   const pairs = [[s.a, s.b], [s.b, s.a]];
   const fr = s.a.role === 'owner' || s.b.role === 'owner';
+  if (pairs.some(([g]) => s.o[g.id].gold > 0 && !fr && owes(g.acct) > 0)) return trEnd(s, 'fail');
   if (pairs.some(([g]) => s.o[g.id].gold > 0 && !xferTake(g.acct, s.o[g.id].gold, true, fr))) return trEnd(s, 'fail');
   for (const [g] of pairs) if (s.o[g.id].gold > 0) xferTake(g.acct, s.o[g.id].gold, false, fr);
   for (const [g, r] of pairs) {
@@ -2045,6 +2055,7 @@ function trMsg(p, m, now) {
       if (typeof id === 'string' && !items.includes(id) && p.acct.owned.includes(id) && !q.acct.owned.includes(id) && !TRADE_DEF.has(id) && PRICE.get(id) > 0) items.push(id);
     }
     let g = Math.floor(Number(m.gold)); if (!(g >= 0)) g = 0; g = Math.min(g, p.acct.gold);
+    if (g > 0 && p.role !== 'owner' && q.role !== 'owner' && owes(p.acct) > 0) { g = 0; p.conn.send({ t: 'tr', a: 'msg', c: 'wreq', n: owes(p.acct) }); }
     o.items = items; o.gold = g; s.o[p.id].ok = false; s.o[q.id].ok = false;
     return trSend(s);
   }
@@ -2068,6 +2079,21 @@ function adminAction(p, m, now) {
     return;
   }
   if (a === 'clear') return broadcast({ t: 'clear' });
+  if (a === 'wdlist') return me >= 2 ? p.conn.send({ t: 'wd', a: 'olist', list: wdOList(), pause: WDM.pause, on: WD_ON ? 1 : 0 }) : p.conn.send({ t: 'err', c: 'perm' });
+  if (a === 'wdpause') { if (me < 2) return p.conn.send({ t: 'err', c: 'perm' }); WDM.pause = WDM.pause ? 0 : 1; wdMetaSave(); log('çekimler', WDM.pause ? 'DURDURULDU' : 'açıldı', 'by', p.name); return ownersCast({ t: 'wd', a: 'olist', list: wdOList(), pause: WDM.pause, on: WD_ON ? 1 : 0 }); }
+  if (a === 'wdref' || a === 'wddone') {            // 'review' durumundaki çekimi elle çöz: iade et ya da ödendi say
+    if (me < 2) return p.conn.send({ t: 'err', c: 'perm' });
+    const w = WDS[String(m.id || '')]; if (!w || w.st !== 'review') return;
+    if (a === 'wdref') wdRefund(w, 'owner iade etti'); else wdFinish(w, w.tx || 'elle');
+    log('çekim', w.id, a === 'wdref' ? 'iade edildi' : 'ödendi sayıldı', 'by', p.name);
+    return ownersCast({ t: 'wd', a: 'olist', list: wdOList(), pause: WDM.pause, on: WD_ON ? 1 : 0 });
+  }
+  if (a === 'deps') {
+    if (me < 2) return p.conn.send({ t: 'err', c: 'perm' });
+    const l = Object.values(users).filter(u => (u.depC || 0) > 0 || (u.wreq || 0) > 0).map(u => ({ n: u.name, usd: Math.round(u.depC || 0) / 100, cnt: u.depN || 0, wr: owes(u), last: u.depT || 0, on: onlineAcct(u) ? 1 : 0, g: Math.floor(u.gold || 0), w: Math.floor(u.wag || 0) }))
+      .sort((x, y) => (y.last - x.last) || (y.usd - x.usd)).slice(0, 300);
+    return p.conn.send({ t: 'deps', l });
+  }
   if (a === 'logs') return me >= 2 ? p.conn.send({ t: 'logs', l: LOGS.slice(-300).reverse() }) : p.conn.send({ t: 'err', c: 'perm' });
   if (a === 'bans') return p.conn.send({ t: 'bans', l: banList() });
   if (a === 'unban') {
@@ -2243,6 +2269,174 @@ setInterval(() => {
 
 function log(...a) { console.log(new Date().toISOString().slice(11, 19), ...a); }
 
+/* ---------- ÇEKİM (otomatik): coin → USDT, NOWPayments Mass Payouts ----------
+ * Açılması için hepsi dolu olmalı: NOWPAY_API_KEY, NOWPAY_IPN_SECRET, PUBLIC_URL (yatırım otomatik modu) +
+ *   NOWPAY_EMAIL, NOWPAY_PASSWORD  (NOWPayments hesabının giriş bilgileri; payout API'si JWT ister)
+ *   NOWPAY_TOTP                     (2FA için Google Authenticator "kurulum anahtarı"; sunucu kodu kendisi üretir)
+ * Ayarlar: WD_MIN_USD (10) · WD_MAX_USD (500, tek çekim) · WD_DAY_USD (1000, kişi başı/gün) · WD_GDAY_USD (5000, tüm site/gün)
+ *          WD_FEE_PCT (0.02) · WD_FLAT_USD (1, ağ ücreti payı) · WD_AGE_H (24, hesap en az kaç saatlik) · WD_COOL_MIN (10)
+ * Çekim USDT TRC20 olarak, NOWPayments'taki saklama (custody) bakiyesinden gider. */
+const WD_EMAIL = process.env.NOWPAY_EMAIL || '', WD_PASS = process.env.NOWPAY_PASSWORD || '', WD_TOTP = (process.env.NOWPAY_TOTP || '').replace(/[\s=-]/g, '').toUpperCase();
+const WD_ON = !!(NP_ON && WD_EMAIL && WD_PASS && WD_TOTP);
+const WD_COIN = 'usdttrc20';
+const numEnv = (k, d) => { const v = Number(process.env[k]); return v > 0 ? v : d; };
+const WD_MIN_C = Math.round(numEnv('WD_MIN_USD', 10) * 100), WD_MAX_C = Math.round(numEnv('WD_MAX_USD', 500) * 100), WD_DAY_C = Math.round(numEnv('WD_DAY_USD', 1000) * 100), WD_GDAY_C = Math.round(numEnv('WD_GDAY_USD', 5000) * 100);
+const WD_FEE_PCT = process.env.WD_FEE_PCT != null && process.env.WD_FEE_PCT !== '' && Number(process.env.WD_FEE_PCT) >= 0 ? Number(process.env.WD_FEE_PCT) : 0.02;
+const WD_FLAT_C = Math.round((process.env.WD_FLAT_USD != null && process.env.WD_FLAT_USD !== '' && Number(process.env.WD_FLAT_USD) >= 0 ? Number(process.env.WD_FLAT_USD) : 1) * 100);
+const WD_AGE_MS = numEnv('WD_AGE_H', 1) * 36e5, WD_COOL_MS = numEnv('WD_COOL_MIN', 10) * 6e4, WD_POLL = numEnv('WD_POLL_MS', 20000), WD_VWAIT = numEnv('WD_VERIFY_WAIT_MS', 31000);
+const WDS = Object.create(null), WDS_FILE = path.join(DATA_DIR, 'withdrawals.json'), WDM_FILE = path.join(DATA_DIR, 'wdmeta.json');
+let WDM = { pause: 0 };
+try { Object.assign(WDS, JSON.parse(fs.readFileSync(WDS_FILE, 'utf8')) || {}); } catch (e) { }
+try { WDM = Object.assign(WDM, JSON.parse(fs.readFileSync(WDM_FILE, 'utf8')) || {}); } catch (e) { }
+function wdSave(w) {
+  if (REMOTE) { redis(['HSET', 'bloodbet:wds', w.id, JSON.stringify(w)]).catch(e => log('çekim kayıt hatası:', e.message)); return; }
+  try { const tmp = WDS_FILE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(WDS)); fs.renameSync(tmp, WDS_FILE); } catch (e) { log('çekim kayıt hatası:', e.message); }
+}
+function wdMetaSave() {
+  if (REMOTE) { redis(['SET', 'bloodbet:wdmeta', JSON.stringify(WDM)]).catch(e => log('çekim ayarı kayıt hatası:', e.message)); return; }
+  try { fs.writeFileSync(WDM_FILE, JSON.stringify(WDM)); } catch (e) { }
+}
+async function loadWdsRemote() {
+  const res = (await redis(['HGETALL', 'bloodbet:wds'])) || [];
+  for (let i = 0; i + 1 < res.length; i += 2) { try { WDS[res[i]] = JSON.parse(res[i + 1]); } catch (e) { } }
+  try { const m = await redis(['GET', 'bloodbet:wdmeta']); if (m) WDM = Object.assign(WDM, JSON.parse(m)); } catch (e) { }
+}
+/* TRON adresi doğrulama: base58check, 0x41 önekli, 34 karakter */
+const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+function tronOk(s) {
+  s = String(s || '');
+  if (!/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(s)) return false;
+  let n = 0n; for (const ch of s) n = n * 58n + BigInt(B58.indexOf(ch));
+  let hex = n.toString(16); if (hex.length % 2) hex = '0' + hex;
+  const b = Buffer.from(hex, 'hex'); if (b.length !== 25 || b[0] !== 0x41) return false;
+  const h = crypto.createHash('sha256').update(crypto.createHash('sha256').update(b.subarray(0, 21)).digest()).digest();
+  return h.subarray(0, 4).equals(b.subarray(21));
+}
+/* TOTP (RFC 6238): Google Authenticator ile aynı 6 haneli kod */
+function totpNow(secret, t) {
+  const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'; let bits = '';
+  for (const ch of secret) { const v = A.indexOf(ch); if (v < 0) continue; bits += v.toString(2).padStart(5, '0'); }
+  const bytes = []; for (let i = 0; i + 8 <= bits.length; i += 8) bytes.push(parseInt(bits.slice(i, i + 8), 2));
+  const ctr = Buffer.alloc(8); ctr.writeBigUInt64BE(BigInt(Math.floor((t == null ? Date.now() : t) / 1000 / 30)));
+  const h = crypto.createHmac('sha1', Buffer.from(bytes)).update(ctr).digest(), o = h[19] & 15;
+  return String(((h[o] & 127) << 24 | h[o + 1] << 16 | h[o + 2] << 8 | h[o + 3]) % 1e6).padStart(6, '0');
+}
+let wdJwt = { t: 0, v: '' };
+async function wdAuth() {
+  if (wdJwt.v && Date.now() - wdJwt.t < 4 * 6e4) return wdJwt.v;
+  const j = await npCall('POST', '/auth', { email: WD_EMAIL, password: WD_PASS });
+  if (!j || !j.token) throw new Error('NOWPayments giriş yanıtında token yok');
+  wdJwt = { t: Date.now(), v: j.token }; return j.token;
+}
+const wdView = w => ({ id: w.id, usd: w.usdC / 100, net: w.net, fee: w.feeC / 100, coins: w.coins, addr: w.addr, st: w.st, at: w.at, upd: w.upd, tx: w.tx || '', err: w.err || '' });
+const wdMine = key => Object.values(WDS).filter(w => w.key === key).sort((x, y) => y.at - x.at).slice(0, 10).map(wdView);
+const wdOList = () => Object.values(WDS).sort((x, y) => y.at - x.at).slice(0, 80).map(w => Object.assign(wdView(w), { n: w.name }));
+const wdActive = w => w.st === 'new' || w.st === 'sending' || w.st === 'proc';
+function wdNotify(w) {
+  const q = onlineAcct(users[w.key] || {});
+  if (q) q.conn.send({ t: 'wd', a: 'mine', list: wdMine(w.key) });
+  ownersCast({ t: 'wd', a: 'olist', list: wdOList(), pause: WDM.pause });
+}
+function wdRefund(w, why) {
+  if (w.st === 'fail' || w.st === 'done') return false;
+  const u = users[w.key]; w.st = 'fail'; w.err = String(why || '').slice(0, 160); w.upd = Date.now();
+  if (u && w.taken) { u.gold += w.coins; w.taken = false; saveUsers(true); const q = onlineAcct(u); if (q) { q.gold = u.gold; pfSync(q, { m: 'wdref', n: w.coins }); broadcast({ t: 'me', id: q.id, eq: q.eq, gold: q.gold }, q.id); } }
+  wdSave(w); logAdd('wd', w.name, 'fail', w.net, { c: w.coins }); wdNotify(w); return true;
+}
+function wdFinish(w, tx) {
+  if (w.st === 'done') return; w.st = 'done'; w.tx = String(tx || '').slice(0, 120); w.upd = Date.now(); wdSave(w);
+  logAdd('wd', w.name, 'done', w.net, { c: w.coins }); wdNotify(w);
+  const q = onlineAcct(users[w.key] || {}); if (q) q.conn.send({ t: 'wd', a: 'done', usd: w.net });
+}
+const sleepMs = ms => new Promise(r => setTimeout(r, ms));
+/* Çekimi işler: payout oluştur → 2FA ile doğrula → sonucu izle. Belirsiz durumda ASLA otomatik iade etmez ('review'), çifte ödeme olmasın. */
+async function wdProcess(w) {
+  if (w.busy) return; w.busy = true;
+  try {
+    if (!w.nid) {
+      w.st = 'sending'; w.upd = Date.now(); wdSave(w);
+      let jwt, r;
+      try {
+        jwt = await wdAuth();
+        r = await npCall('POST', '/payout', { withdrawals: [{ address: w.addr, currency: WD_COIN, amount: w.net }] }, jwt);
+      } catch (e) {
+        if (e.status >= 400 && e.status < 500) return wdRefund(w, e.message);          // kesin ret: coin geri
+        w.st = 'review'; w.err = 'belirsiz: ' + e.message.slice(0, 120); w.upd = Date.now(); wdSave(w); wdNotify(w); log('ÇEKİM BELİRSİZ, elle bak:', w.id, e.message); return;
+      }
+      const wi = r && Array.isArray(r.withdrawals) && r.withdrawals[0];
+      w.bid = String((r && r.id) || (wi && wi.batch_withdrawal_id) || ''); w.nid = String((wi && wi.id) || '');
+      if (!w.bid || !w.nid) { w.st = 'review'; w.err = 'payout yanıtı beklenmedik'; w.upd = Date.now(); wdSave(w); wdNotify(w); return; }
+      w.st = 'proc'; w.ver = 0; wdSave(w);
+    }
+    if (!w.ver) {                                                                        // 2FA doğrulaması (TOTP)
+      let okv = false, last = '';
+      for (let i = 0; i < 4 && !okv; i++) {
+        try { const jwt = await wdAuth(); await npCall('POST', '/payout/' + encodeURIComponent(w.bid) + '/verify', { verification_code: totpNow(WD_TOTP) }, jwt); okv = true; }
+        catch (e) { last = e.message; await sleepMs(i ? WD_VWAIT : Math.min(4000, WD_VWAIT)); }
+      }
+      if (!okv) { w.st = 'review'; w.err = 'doğrulanamadı: ' + last.slice(0, 110); w.upd = Date.now(); wdSave(w); wdNotify(w); log('ÇEKİM DOĞRULANAMADI, NOWPayments panelinde bak:', w.id, last); return; }
+      w.ver = 1; wdSave(w);
+    }
+    // sonucu izle: ilk 10 dk 20 sn'de bir, sonra dakikada bir, en çok 6 saat
+    const t0 = w.at;
+    while (Date.now() - t0 < 6 * 36e5) {
+      let s = '', j = null;
+      try { const jwt = await wdAuth(); j = await npCall('GET', '/payout/' + encodeURIComponent(w.nid), null, jwt); s = String((j && (j.status || (j.withdrawals && j.withdrawals[0] && j.withdrawals[0].status))) || '').toUpperCase(); } catch (e) { s = ''; }
+      if (s === 'FINISHED') return wdFinish(w, (j && (j.hash || (j.withdrawals && j.withdrawals[0] && j.withdrawals[0].hash))) || '');
+      if (s === 'FAILED' || s === 'REJECTED' || s === 'EXPIRED') return wdRefund(w, 'NOWPayments: ' + s.toLowerCase());
+      await sleepMs(Date.now() - t0 < 6e5 ? WD_POLL : WD_POLL * 3);
+    }
+    w.st = 'review'; w.err = 'sonuç 6 saatte gelmedi'; w.upd = Date.now(); wdSave(w); wdNotify(w);
+  } finally { w.busy = false; }
+}
+function wdResume() {            // sunucu yeniden başlayınca yarım kalanları sürdür
+  for (const w of Object.values(WDS)) {
+    if (w.st === 'new' && !w.taken) { w.st = 'review'; w.err = 'yarım kaldı'; wdSave(w); }
+    else if ((w.st === 'new' || w.st === 'sending' || w.st === 'proc') && WD_ON) { if (w.st === 'sending' && !w.nid) { w.st = 'review'; w.err = 'gönderim sırasında kesildi'; wdSave(w); } else wdProcess(w).catch(e => log('çekim hatası:', e.message)); }
+  }
+}
+function wdInfo(p) {
+  const a = p.acct, now = Date.now();
+  return { t: 'wd', a: 'info', on: WD_ON ? 1 : 0, pause: WDM.pause ? 1 : 0, rate: COIN_RATE, min: WD_MIN_C / 100, max: WD_MAX_C / 100, day: WD_DAY_C / 100, pct: WD_FEE_PCT * 100, flat: WD_FLAT_C / 100,
+    wr: owes(a), dep: (a.depC || 0) > 0 ? 1 : 0, mail: a.mailOk ? 1 : 0, ageH: WD_AGE_MS / 36e5, ageLeft: Math.max(0, (a.created || 0) + WD_AGE_MS - now), coin: 'USDT TRC20', list: wdMine(a.name.toLowerCase()) };
+}
+function wdMsg(p, m, now) {
+  const a = p.acct, key = a.name.toLowerCase(), c = p.conn, act = String(m.a || '');
+  const err = (code, x) => c.send(Object.assign({ t: 'wd', a: 'err', c: code }, x || {}));
+  if (act === 'info') return c.send(wdInfo(p));
+  if (act === 'mine') return c.send({ t: 'wd', a: 'mine', list: wdMine(key) });
+  if (act !== 'req') return;
+  if (now - (p.wdT || 0) < 1500) return; p.wdT = now;
+  if (!WD_ON) return err('off');
+  if (WDM.pause) return err('pause');
+  if (!a.mailOk) return err('mail');
+  if (!((a.depC || 0) > 0)) return err('nodep');
+  if (owes(a) > 0) return err('wreq', { n: owes(a) });
+  if (now - (a.created || 0) < WD_AGE_MS) return err('age', { left: (a.created || 0) + WD_AGE_MS - now });
+  if (p.bj || p.mn || p.tw || p.tr) return err('busy');
+  const addr = String(m.addr || '').trim();
+  if (!tronOk(addr)) return err('addr');
+  const coins = Math.floor(Number(m.coins));
+  const usdC = Math.floor(coins * 100 / COIN_RATE);
+  if (!(coins >= 1) || !(usdC >= WD_MIN_C && usdC <= WD_MAX_C)) return err('amt', { mn: WD_MIN_C / 100, mx: WD_MAX_C / 100 });
+  if (coins > a.gold) return err('poor');
+  const mineAll = Object.values(WDS).filter(w => w.key === key && w.st !== 'fail');
+  if (mineAll.some(wdActive) || mineAll.some(w => w.st === 'review')) return err('many');
+  if (mineAll.length && now - Math.max(...mineAll.map(w => w.at)) < WD_COOL_MS) return err('cool');
+  const dayAll = Object.values(WDS).filter(w => w.st !== 'fail' && now - w.at < 864e5);
+  if (dayAll.filter(w => w.key === key).reduce((t, w) => t + w.usdC, 0) + usdC > WD_DAY_C) return err('day');
+  if (dayAll.reduce((t, w) => t + w.usdC, 0) + usdC > WD_GDAY_C) return err('gday');
+  const feeC = Math.round(usdC * WD_FEE_PCT) + WD_FLAT_C, netC = usdC - feeC;
+  if (netC < 100) return err('amt', { mn: WD_MIN_C / 100, mx: WD_MAX_C / 100 });
+  const w = { id: 'w' + now.toString(36) + crypto.randomBytes(3).toString('hex'), key, name: a.name, coins, usdC, feeC, net: netC / 100, addr, coin: WD_COIN, st: 'new', taken: false, at: now, upd: now };
+  WDS[w.id] = w; wdSave(w);                                                              // önce kayıt, sonra bakiyeden düş
+  a.gold -= coins; p.gold = a.gold; p.holdUntil = now + 5000; w.taken = true; saveUsers(true); wdSave(w);
+  logAdd('wd', a.name, 'req', w.net, { c: coins });
+  broadcast({ t: 'me', id: p.id, eq: p.eq, gold: p.gold }, p.id);
+  c.send({ t: 'wd', a: 'ok', w: wdView(w), gold: a.gold }); pfSync(p, { m: 'wdreq' }); wdNotify(w);
+  wdProcess(w).catch(e => { log('çekim hatası:', e.message); if (w.st === 'sending' || w.st === 'new') { w.st = 'review'; w.err = String(e.message).slice(0, 120); wdSave(w); wdNotify(w); } });
+}
+
 /* ---------- tek seferlik bakiye sıfırlama: herkesin bakiyesi GOLD_RESET_TO (100) coin olur ----------
  * GOLD_RESET_ID değişmedikçe bir daha çalışmaz (işaret dosyada / veritabanında tutulur). Çalışmadan önce yedek alınır.
  * NO_GOLD_RESET=1 ile tamamen kapatılabilir. */
@@ -2273,6 +2467,8 @@ if (require.main === module) {
     log(`BloodBet sunucusu http://localhost:${PORT} adresinde (WebSocket: /ws)`);
     log(REMOTE ? 'Hesaplar: Upstash veritabanı (kalıcı)' : 'Hesaplar: yerel dosya ' + USERS_FILE + ' (barındırma diski kalıcı değilse güncellemede silinir!)');
     log((CF_ID && CF_TOKEN) ? 'Sesli sohbet: Cloudflare TURN kullanılacak' : ICE && ICE.some(x => [].concat(x.urls).some(u => /^turns?:/.test(u))) ? 'Sesli sohbet: TURN sunucusu ayarlı' : 'Sesli sohbet: TURN yok (farklı ağlardaki oyuncular birbirini duyamayabilir)');
+    log(WD_ON ? 'Coin çekme: otomatik (NOWPayments payout, TOTP ile)' + (WDM.pause ? ' — ŞU AN DURDURULMUŞ' : '') : 'Coin çekme: kapalı (NOWPAY_EMAIL / NOWPAY_PASSWORD / NOWPAY_TOTP yok)');
+    wdResume();
     log(NP_ON ? 'Coin satın alma: NOWPayments otomatik mod (IPN: ' + PUBLIC_URL + '/ipn/nowpayments)' : 'Coin satın alma: elle onay modu (NOWPAY_* ayarlı değil)');
     log(MAIL_ON ? 'E-posta doğrulama: Resend ile gönderiliyor' : 'UYARI: RESEND_API_KEY / MAIL_FROM yok, doğrulama kodları e-posta yerine bu konsola yazılır (sadece test için!)');
     if (!process.env.OWNER_CODE) log('OWNER_CODE verilmedi, bu oturum için üretildi:', OWNER_CODE);
