@@ -2503,7 +2503,7 @@ async function wdAuth() {
 const wdView = (w, own) => ({ id: w.id, usd: w.usdC / 100, net: w.net, fee: w.feeC / 100, coins: w.coins, addr: w.addr, st: w.st, at: w.at, upd: w.upd, tx: w.tx || '', err: own ? (w.err || '') : '', rt: own && w.retry ? 1 : 0 });   // ham sağlayıcı hatası (IP, API yanıtı) sadece owner'a
 const wdMine = key => Object.values(WDS).filter(w => w.key === key).sort((x, y) => y.at - x.at).slice(0, 10).map(wdView);
 const wdOList = () => Object.values(WDS).sort((x, y) => y.at - x.at).slice(0, 80).map(w => Object.assign(wdView(w, true), { n: w.name }));
-const wdOMsg = () => ({ t: 'wd', a: 'olist', list: wdOList(), pause: WDM.pause, on: WD_ON ? 1 : 0, ip: WDM.ipBad || '', warn: WDM.warn || '' });
+const wdOMsg = () => ({ t: 'wd', a: 'olist', list: wdOList(), pause: WDM.pause, on: WD_ON ? 1 : 0, ip: WDM.ipBad || '', wl: Object.values(WDS).some(w => w.st === 'review' && w.wl) ? 1 : 0, warn: WDM.warn || '' });
 const wdActive = w => w.st === 'new' || w.st === 'sending' || w.st === 'proc';
 function wdNotify(w) {
   const q = onlineAcct(users[w.key] || {});
@@ -2524,11 +2524,13 @@ function wdFinish(w, tx) {
 const sleepMs = ms => new Promise(r => setTimeout(r, ms));
 /* NOWPayments isteği yetkisiz/IP izni yok (401/403): payout HİÇ oluşmadı, o yüzden güvenle sıraya alınır; coin oyuncuda bloke kalır, owner paneli IP'yi gösterir */
 function wdQueue(w, e) {
-  const msg = String(e && e.message || ''), ip = (msg.match(/Invalid IP\s*-\s*([0-9a-fA-F.:]+)/) || [])[1] || '';
+  const msg = String(e && e.message || ''), ip = (msg.match(/Invalid IP\s*-\s*([0-9a-fA-F.:]+)/) || [])[1] || '', wl = !ip && /not whitelisted|whitelist/i.test(msg);
   const first = w.st !== 'review' || !w.retry;
-  w.st = 'review'; w.retry = 1; w.upd = Date.now();
-  w.err = ip ? 'NOWPayments IP izni yok: ' + ip + ' (Whitelist IPs listesine ekle, sonra Tekrar dene)' : 'NOWPayments erişim reddi (' + (e.status || '?') + '): ' + msg.slice(0, 90);
-  if (ip) WDM.ipBad = ip; wdMetaSave(); wdSave(w);
+  w.st = 'review'; w.retry = 1; w.wl = wl ? 1 : 0; w.upd = Date.now();
+  w.err = ip ? 'NOWPayments IP izni yok: ' + ip + ' (Whitelist IPs listesine ekle, sonra Tekrar dene)'
+    : wl ? 'Çekim adresi NOWPayments whitelist\'inde değil: ' + w.addr + ' (adresi whitelist\'e ekle ya da whitelist\'i kapattır, sonra Tekrar dene)'
+    : 'NOWPayments erişim reddi (' + (e.status || '?') + '): ' + msg.slice(0, 90);
+  if (ip) WDM.ipBad = ip; if (wl) WDM.wlBad = 1; wdMetaSave(); wdSave(w);
   if (first) { log('ÇEKİM SIRAYA ALINDI (erişim reddi):', w.id, ip ? 'IP ' + ip + ' NOWPayments whitelist\'ine eklenmeli' : msg.slice(0, 120)); wdNotify(w); }
   return;
 }
@@ -2540,7 +2542,7 @@ async function wdRetryTick() {                                   // erişim hata
       if (w.st !== 'review' || !w.retry || w.nid || w.busy || !w.taken) continue;
       w.st = 'new'; wdProcess(w).catch(e => log('çekim yeniden deneme hatası:', e.message));   // takip (saatler sürebilir) arka planda sürer
       for (let i = 0; i < 300 && (w.st === 'new' || w.st === 'sending') && !w.nid; i++) await sleepMs(100);   // ilk sonuç: payout oluştu mu / reddedildi mi
-      if (w.st === 'review' && w.retry) break;                   // hâlâ reddediliyor: diğerlerini yorma
+      if (w.st === 'review' && w.retry) { if (w.wl) continue; break; }   // IP/kimlik reddi: diğerlerini yorma · adres whitelist'i: adres başına, sıradakini dene
       if (WDM.ipBad) { WDM.ipBad = ''; wdMetaSave(); } wdNotify(w);
     }
   } finally { wdRetrying = false; }
@@ -2571,14 +2573,14 @@ async function wdProcess(w) {
         jwt = await wdAuth();
         r = await npCall('POST', '/payout', { withdrawals: [{ address: w.addr, currency: WD_COIN, amount: w.net }] }, jwt);
       } catch (e) {
-        if (e.status === 401 || e.status === 403) return wdQueue(w, e);                 // yapılandırma sorunu (IP izni, kimlik): iade etme, sıraya al; düzelince otomatik tekrar denenir
+        if (e.status === 401 || e.status === 403 || (e.status === 400 && /whitelist/i.test(String(e.message)))) return wdQueue(w, e);                 // yapılandırma sorunu (IP izni, kimlik): iade etme, sıraya al; düzelince otomatik tekrar denenir
         if (e.status >= 400 && e.status < 500) return wdRefund(w, e.message);          // kesin ret: coin geri
         w.st = 'review'; w.err = 'belirsiz: ' + e.message.slice(0, 120); w.upd = Date.now(); wdSave(w); wdNotify(w); log('ÇEKİM BELİRSİZ, elle bak:', w.id, e.message); return;
       }
       const wi = r && Array.isArray(r.withdrawals) && r.withdrawals[0];
       w.bid = String((r && r.id) || (wi && wi.batch_withdrawal_id) || ''); w.nid = String((wi && wi.id) || '');
       if (!w.bid || !w.nid) { w.st = 'review'; w.err = 'payout yanıtı beklenmedik'; w.upd = Date.now(); wdSave(w); wdNotify(w); return; }
-      w.st = 'proc'; w.ver = 0; w.retry = 0; if (WDM.ipBad) { WDM.ipBad = ''; wdMetaSave(); } wdSave(w);
+      w.st = 'proc'; w.ver = 0; w.retry = 0; w.wl = 0; if (WDM.ipBad) { WDM.ipBad = ''; wdMetaSave(); } wdSave(w);
     }
     if (!w.ver) {                                                                        // 2FA doğrulaması (TOTP)
       let okv = false, last = '';
